@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.sites-runtime/
+.wrangler/
+.cache/
+runtime/
+outputs/
+*.log
+*.env
+.env*

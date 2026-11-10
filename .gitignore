@@ -1,0 +1,25 @@
+# 本地发布工具留下的备份目录，不属于项目源码
+/.sites-git-backup/
+
+# 依赖与运行产物（各子项目另有自己的 .gitignore）
+node_modules/
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+runtime/
+artifacts/
+*.log
+
+# 环境变量与密钥
+.env
+.env.*
+!.env.example
+!.env.sample
+
+# 操作系统与编辑器
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/

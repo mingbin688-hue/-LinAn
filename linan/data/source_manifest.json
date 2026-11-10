@@ -1,0 +1,11 @@
+{
+  "url": "https://zenodo.org/api/records/17180309/files/new_labeled_data.zip/content",
+  "source": "CASAS / WSU, Zenodo record 17180309",
+  "archive_member": "aruba.txt",
+  "archive_sha256": "c7d97c44b2c121739f318fb37a8714e100eed88b7eab9dad753113478fd36296",
+  "input_sha256": "32518ee833381ac9ba56b24695852bf5f547dc3ab08b19e1a480478b8f8903c4",
+  "time_policy": "保留采集地墙上时间计算时段；TZ仅提供稳定时间轴，不声称采集时区为上海",
+  "doi": "10.5281/zenodo.17180309",
+  "license": "CC-BY-4.0",
+  "attribution": "Cook, Diane; Crandall, Aaron; Thomas, Brian (2025), CASAS Smart Home dataset"
+}
