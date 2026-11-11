@@ -54,7 +54,7 @@ def main():
         for path in files:
             relative = path.relative_to(ROOT).as_posix()
             content = path.read_bytes()
-            archive.writestr('linan/' + relative, content)
+            archive.writestr(relative, content)
             entries.append({'path': relative, 'bytes': len(content), 'sha256': hashlib.sha256(content).hexdigest()})
     manifest = {'archive': OUTPUT.name, 'sha256': hashlib.sha256(OUTPUT.read_bytes()).hexdigest(), 'files': entries}
     OUTPUT.with_suffix('.manifest.json').write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding='utf-8')

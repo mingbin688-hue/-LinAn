@@ -10,11 +10,11 @@
 powershell -ExecutionPolicy Bypass -File .\Verify.ps1 -FlutterExecutable E:\tools\flutter\bin\flutter.bat
 ```
 
-结果文件：`runtime/verify/20261111-220152-95db2d0a/verification.json`，`success: true`，四个步骤（backend、flutter-analyze、flutter-test、flutter-build-windows）退出码均为 0。
+结果文件：`runtime/verify/20261111-222829-f4911657/verification.json`，`success: true`，四个步骤（backend、flutter-analyze、flutter-test、flutter-build-windows）退出码均为 0。
 
 | 项目 | 结果 |
 |---|---|
-| Python 后端测试 | 56 项通过，16.2 秒，1 条 Starlette/httpx 弃用警告 |
+| Python 后端测试 | 56 项通过，16.0 秒，1 条 Starlette/httpx 弃用警告 |
 | Flutter 静态检查 | `flutter analyze`：No issues found |
 | Flutter 单元测试 | `flutter test`：1 项通过（登录页渲染演示身份与服务器设置） |
 | 本地开发 | `Start.ps1 -Background` 起后端，`flutter run -d windows` 热重载；API 与客户端分离，无静态页面托管 |
@@ -23,7 +23,7 @@ powershell -ExecutionPolicy Bypass -File .\Verify.ps1 -FlutterExecutable E:\tool
 | 权限边界 | 家属只看到关联老人；他人档案 403；老人不能访问任务列表；照护人员只看到自己的任务；未登录 401 |
 | SOS 规则 | 3 级安全事件不因报平安或模型文字降级/关闭；10 分钟未回应自动升级为优先并改派上门核实 |
 | 实验页 | 合成数据、CASAS Aruba、人员调度三张对照表均显示，数值与实验 JSON 一致 |
-| Windows 构建 | `flutter build windows --release` 通过（8.2 秒），exe 实际启动并连接 `127.0.0.1:8765`，标题「邻安 · 社区守护」 |
+| Windows 构建 | `flutter build windows --release` 通过（清理旧 CMake 缓存后 40.8 秒），exe 实际启动并连接 `127.0.0.1:8765`，标题「邻安 · 社区守护」 |
 | Windows 窄窗口 | 406×819 手机宽度下登录页、安心守护页无横向溢出 |
 | Android 构建 | `flutter build apk --release` 通过，`app-release.apk` 51.8 MB |
 | APK 清单 | package `com.wutongli.linan_app`，versionName 1.0.0，minSdk 24，targetSdk 36，INTERNET 权限，`usesCleartextTraffic=true`，应用名「邻安」 |

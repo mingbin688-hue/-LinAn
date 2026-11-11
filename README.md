@@ -12,20 +12,20 @@
 
 | 守护总览 | 任务中心 |
 |---|---|
-| <img src="linan/docs/overview.png" width="520" alt="守护总览"> | <img src="linan/docs/tasks.png" width="520" alt="任务中心"> |
+| <img src="docs/overview.png" width="520" alt="守护总览"> | <img src="docs/tasks.png" width="520" alt="任务中心"> |
 
 | 实验对照 | 手机端安心守护 |
 |---|---|
-| <img src="linan/docs/experiments.png" width="520" alt="实验对照"> | <img src="linan/docs/mobile.png" width="300" alt="手机端安心守护"> |
+| <img src="docs/experiments.png" width="520" alt="实验对照"> | <img src="docs/mobile.png" width="300" alt="手机端安心守护"> |
 
 ## 形态
 
-本仓库只保留一套本地运行、可调试的完整版本：[`linan/`](linan/README.md)。
+仓库根目录即完整的本地版本：后端、Flutter 客户端、脚本、测试与文档平铺展开，不再嵌套子目录。
 
 | 组成 | 技术栈 |
 |---|---|
 | 后端 | FastAPI + SQLite + scikit-learn / SciPy |
-| 客户端 | Flutter 3（Windows 桌面与 Android 共用 `linan/app/lib` 一套 Dart 代码） |
+| 客户端 | Flutter 3（Windows 桌面与 Android 共用 `app/lib` 一套 Dart 代码） |
 | 数据 | 20 位虚拟老人、4 位工作人员，合成基线 + CASAS Aruba 公开数据 |
 
 不提供网页版，也不依赖云端服务；所有功能都在本机以 Windows 客户端或 Android 客户端连接本机 FastAPI 运行。
@@ -35,7 +35,6 @@
 准备：**Python 3.12+**、**Flutter 3.47+**（Windows 桌面构建还需要 Visual Studio 2022 的 C++ 桌面开发组件）。
 
 ```powershell
-cd linan
 powershell -ExecutionPolicy Bypass -File ./Setup.ps1
 powershell -ExecutionPolicy Bypass -File ./Setup.ps1 -RebuildApp -FlutterExecutable "E:/tools/flutter/bin/flutter.bat"
 powershell -ExecutionPolicy Bypass -File ./Start.ps1 -OpenApp
@@ -80,11 +79,10 @@ Android 调试需要模拟器或真机：`flutter run -d <device-id>`，客户�
 ## 验证
 
 ```powershell
-cd linan
 powershell -ExecutionPolicy Bypass -File ./Verify.ps1 -FlutterExecutable "E:/tools/flutter/bin/flutter.bat"
 ```
 
-依次执行后端 `pytest`、`flutter analyze`、`flutter test` 与 Windows Release 构建。2026-11-11 实测：后端 **56 passed**、`flutter analyze` 无问题、`flutter test` 1 passed、Windows 构建通过；管理员/照护/家属/老人四角色客户端闭环与权限边界均通过。详细记录、截图与已知限制见 [验证说明](linan/docs/VERIFICATION.md)，实验数据见 [实验报告](linan/docs/EXPERIMENT_REPORT.md)。
+依次执行后端 `pytest`、`flutter analyze`、`flutter test` 与 Windows Release 构建。2026-11-11 实测：后端 **56 passed**、`flutter analyze` 无问题、`flutter test` 1 passed、Windows 构建通过；管理员/照护/家属/老人四角色客户端闭环与权限边界均通过。详细记录、截图与已知限制见 [验证说明](docs/VERIFICATION.md)，实验数据见 [实验报告](docs/EXPERIMENT_REPORT.md)。
 
 ## 数据与已知局限
 
@@ -92,15 +90,71 @@ powershell -ExecutionPolicy Bypass -File ./Verify.ps1 -FlutterExecutable "E:/too
 
 社区、老人、联系人、工作人员与到达时间矩阵均为合成数据；演示密码与角色体系不能替代真实社区的账户管理和数据授权流程。本机环境未做 Android 真机安装与 iOS/macOS 构建，详见验证文档。
 
+## 走完一次闭环
+
+1. 管理员进入“回放与实验”，选择“三位老人，同时需要关注”；也可演示数据离线、外出、冷启动或资源冲突。
+2. 风险事件或老人详情显示信息来源、个人基线、判断依据与建议措施。
+3. 在任务中心“计算派单建议”，查看技能、值班状态与仿真到达时间；调整人员必须填写原因。
+4. 确认时重新检查任务与人员版本、技能、值班、可用性及占用；旧推荐失效则重新计算。
+5. 切换对应 `staffN`：接单 → 开始处理 → 提交处置结果。拒单需说明原因并释放占用。
+6. 管理员复核：已确认安全或数据问题已核查才可关闭；未能联系、仍需帮助必须继续跟进。
+7. 在任务详情查看风险输入快照、推荐理由、人工调整、审计时间线与 Agent 运行节点。
+
+状态机：`待确认 → 已派单 → 已接单 → 处理中 → 待复核 → 已关闭`。管理员也可直接核实后关闭尚未执行的任务；家属一次报平安不会自动关闭紧急事件。
+
+## 页面与角色
+
+| 角色 | 导航 |
+|---|---|
+| 管理员（8 页） | 守护总览、老人档案与状态、风险事件、任务中心、人员资源、邻安助手、工作流中心、回放与实验 |
+| 照护人员（4 页） | 我的任务、服务对象、我的状态、邻安助手 |
+| 家属 / 老人（3 页） | 安心守护、状态记录、邻安助手 |
+
+助手回答附带业务记录引用（老人、事件、任务），点击可跳转；工作流中心展示自动派单开关、三类流程图、Agent 目录与每次运行的全部节点、模式、耗时和输入输出。
+
+## 文件结构
+
+| 位置 | 内容 |
+|---|---|
+| `backend/` | 鉴权、SQLite、风险引擎、调度、Agent/工作流、实验与回放 |
+| `app/lib/src/` | Flutter 页面、状态层、API 客户端、模型、主题与组件 |
+| `app/windows/`、`app/android/` | 原生平台工程与构建配置 |
+| `app/build/windows/x64/runner/Release/` | Windows 客户端构建产物（本地生成，不进仓库） |
+| `app/build/app/outputs/flutter-apk/` | Android 安装包（本地生成，不进仓库） |
+| `scripts/` | 数据流水线、实验、离线训练、源码打包 |
+| `tests/` | 后端测试（56 项） |
+| `data/` | 标准化窗口、来源清单、实际实验结果 |
+| `docs/` | 用户手册、Agent 说明、实验报告、验证记录与截图 |
+| `runtime/` | 首次启动生成的数据库、日志、验证结果（不进源码包） |
+
+## 接口摘要
+
+`POST /api/auth/login`、`GET /api/elders`、`POST /api/events`、`GET /api/incidents`、`GET /api/tasks`、`POST /api/dispatch/recommend`、`POST /api/dispatch/confirm`、`POST /api/tasks/{id}/action`、`GET /api/staff`、`POST /api/assistant/messages`、`GET/PUT /api/workflows/settings`、`GET /api/workflows/runs`、`POST /api/experiments/run`、`POST /api/replay/window`、`GET /api/feedback/export`。
+
+接口使用 Bearer 令牌与服务端角色、对象范围校验。SQLite 写入使用 `BEGIN IMMEDIATE`，部分唯一索引保证一人只占用一项执行任务；事件按 ID 去重，历史事件保留但不覆盖更新的当前状态，重启后继续扫描超时。
+
+## 打包与清理
+
+```powershell
+powershell -ExecutionPolicy Bypass -File ./Verify.ps1 -Package
+```
+
+或直接生成源码包：
+
+```powershell
+./.venv/Scripts/python.exe scripts/package.py
+```
+
+输出 `artifacts/linan-source.zip` 与 SHA256 清单。源码包排除 `runtime/`、数据库、会话令牌、`.venv`、`.dart_tool`、Gradle/CMake 中间产物与 `.symbols` 调试文件，只保留可运行源码、Windows/APK 构建结果与处理后数据。
+
 ## 文档
 
-- [完整版说明](linan/README.md)
-- [用户手册与六分钟演示脚本](linan/docs/USER_MANUAL.md)
-- [Agent、助手与工作流](linan/docs/AGENT_WORKFLOWS.md)
-- [实验报告](linan/docs/EXPERIMENT_REPORT.md)
-- [验证记录](linan/docs/VERIFICATION.md)
+- [用户手册与六分钟演示脚本](docs/USER_MANUAL.md)
+- [Agent、助手与工作流](docs/AGENT_WORKFLOWS.md)
+- [实验报告](docs/EXPERIMENT_REPORT.md)
+- [验证记录](docs/VERIFICATION.md)
 
 ## 许可与署名
 
-- 代码以 **Apache License 2.0** 发布，见 [LICENSE](LICENSE)；第三方组件声明见 [linan/THIRD_PARTY_NOTICES.txt](linan/THIRD_PARTY_NOTICES.txt)。
-- 数据集：Cook, Diane; Crandall, Aaron; Thomas, Brian. *CASAS Smart Home dataset (aruba, cairo, milan, tulum)* (2025). Zenodo. [DOI:10.5281/zenodo.17180309](https://doi.org/10.5281/zenodo.17180309)，许可 [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)。本项目仅使用 Aruba，派生方式与校验值见 `linan/scripts/data_pipeline.py` 与 `linan/data/source_manifest.json`。
+- 代码以 **Apache License 2.0** 发布，见 [LICENSE](LICENSE)；第三方组件声明见 [THIRD_PARTY_NOTICES.txt](THIRD_PARTY_NOTICES.txt)。
+- 数据集：Cook, Diane; Crandall, Aaron; Thomas, Brian. *CASAS Smart Home dataset (aruba, cairo, milan, tulum)* (2025). Zenodo. [DOI:10.5281/zenodo.17180309](https://doi.org/10.5281/zenodo.17180309)，许可 [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)。本项目仅使用 Aruba，派生方式与校验值见 `scripts/data_pipeline.py` 与 `data/source_manifest.json`。
