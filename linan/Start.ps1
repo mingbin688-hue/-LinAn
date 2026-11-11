@@ -26,10 +26,10 @@ if (-not $PythonExecutable) {
     elseif (Test-Path -LiteralPath $workspacePython) { $PythonExecutable = $workspacePython }
     else { $PythonExecutable = "python" }
 }
-if (-not (Test-Path -LiteralPath (Join-Path $PSScriptRoot "frontend\dist\index.html"))) {
-    throw "Frontend is missing. Run Setup.ps1 -RebuildFrontend first."
+if (-not (Test-Path -LiteralPath (Join-Path $PSScriptRoot "app\build\web\index.html"))) {
+    throw "Flutter Web build is missing. Run Setup.ps1 -RebuildFrontend first."
 }
-Write-Host "Linan: http://localhost:$Port  |  admin / Demo2026!" -ForegroundColor Green
+Write-Host "Linan: $url" -ForegroundColor Green
 if (-not $Background) {
     Write-Host "Press Ctrl+C to stop. Use -Background for persistent local operation."
     & $PythonExecutable -m uvicorn backend.main:app --host $HostAddress --port $Port

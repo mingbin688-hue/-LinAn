@@ -1,34 +1,54 @@
 # 验证记录
 
-## 2026年11月10日启动修复
+本文件记录本地实际执行的验证，不代表生产或真实社区验证。每条记录保留独立日志目录，旧记录的通过结果不能当作本次结果。
 
-修复本地服务未运行时无法打开页面的问题。双击启动入口现会启动隐藏后台进程、轮询邻安专属健康接口并自动打开页面；重复启动复用同一服务。新增Stop.ps1，停止前校验进程路径与启动时间，避免误停其他进程。后台日志与进程信息保存在runtime目录，均不进入源码包。
+## 2026年11月11日 Flutter 迁移验证
 
-已实际验证后台启动、健康接口、重复启动复用、停止后重启。用户当前本机服务保持后台运行；电脑重启后重新双击启动入口即可。
+环境：Windows 11，Asia/Shanghai；Flutter 3.47.9 / Dart 3.13.7（`E:\tools\flutter`）；Python 3.14.8 + `.venv`；Android SDK 36.0.0；Visual Studio Build Tools 2022 17.14。统一入口：
 
-## 初版验证
+```powershell
+powershell -ExecutionPolicy Bypass -File .\Verify.ps1 -FlutterExecutable E:\tools\flutter\bin\flutter.bat
+```
 
-验证日期：2026年11月9日，Asia/Shanghai。此文档记录本地实际执行，不是生产或真实社区验证。
+结果文件：`runtime/verify/20261111-205245-3cf6725d/verification.json`，`success: true`，四个步骤退出码均为 0。
 
 | 项目 | 结果 |
 |---|---|
-| Python后端测试 | 21项通过，约14秒 |
-| TypeScript | `vue-tsc --noEmit`通过 |
-| 前端构建 | Vite生产构建通过，预构建文件已随包交付 |
-| 锁文件安装 | pnpm离线锁文件安装通过，esbuild安装脚本通过 |
-| 启动脚本 | `Start.ps1`实际启动FastAPI成功，8765端口提供页面与API |
-| 浏览器桌面 | 1440×1080，完整多角色闭环通过 |
-| 浏览器手机 | 390×844，老人页无横向溢出 |
-| JavaScript运行错误 | 浏览器检查捕获0条 |
-| 公开数据流水线 | 官方归档下载、Aruba提取、因果窗口构造、实验实际完成 |
-| 离线模型 | 实际生成候选模型、训练清单和已复核反馈材料 |
+| Python 后端测试 | 56 项通过，16.3 秒，1 条 Starlette/httpx 弃用警告 |
+| Flutter 静态检查 | `flutter analyze`：No issues found |
+| Flutter 单元测试 | `flutter test`：1 项通过（登录页渲染演示身份与服务器设置） |
+| Flutter Web 构建 | `flutter build web --release` 通过，`main.dart.js` 约 2.93 MB |
+| Web 端联调 | FastAPI 直接托管 `app/build/web`；管理员/照护/家属/老人四角色登录与页面渲染通过 |
+| 业务闭环 | 情景注入→事件→派单建议→人工确认→接单→开始处理→处置反馈→复核关闭，审计与 Agent 运行记录完整 |
+| 权限边界 | 家属只看到关联老人；他人档案 403；老人不能访问任务列表；照护人员只看到自己的任务；未登录 401 |
+| SOS 规则 | 3 级安全事件不因报平安或模型文字降级/关闭；10 分钟未回应自动升级为优先并改派上门核实 |
+| 实验页 | 合成数据、CASAS Aruba、人员调度三张对照表均显示，数值与实验 JSON 一致 |
+| Windows 构建 | `flutter build windows --release` 通过，exe 实际启动并登录后端，标题「邻安 · 社区守护」 |
+| Windows 窄窗口 | 406×819 手机宽度下登录页、安心守护页无横向溢出 |
+| Android 构建 | `flutter build apk --release` 通过，`app-release.apk` 51.8 MB |
+| APK 清单 | package `com.wutongli.linan_app`，versionName 1.0.0，minSdk 24，targetSdk 36，INTERNET 权限，`usesCleartextTraffic=true`，应用名「邻安」 |
+| 启动/停止脚本 | `Start.ps1 -Background` 后台就绪后可访问；`Stop.ps1` 校验进程路径与启动时间后停止 |
+| 源码包 | `-Package` 生成 `artifacts/linan-source.zip`，排除 runtime、数据库、会话与构建缓存 |
 
-后端测试覆盖角色和关联范围隔离、重复事件、历史事件保护、主动求助不被报平安降级、数据未知、无效输入、旧推荐拦截、技能不匹配、并发派单单人容量、负责人权限、完整状态机、未解决反馈、拒单释放容量、重启与超时幂等、冷启动、调度优先级与稀缺技能、CASAS模型重建、新档案从累积窗口建立基线，以及未回应升级和已回应不升级。
+浏览器验收覆盖：管理员总览/老人档案/风险事件/任务中心/人员资源/邻安助手/工作流中心/回放与实验八个页面；照护人员接单、处置反馈；家属安心守护、状态记录与助手问答；老人上报平安后事件仍保留。界面截图已换为 Flutter 版本：`overview.png`、`experiments.png`、`tasks.png`、`decision-trace.png`、`mobile.png`。
 
-浏览器操作包括管理员登录、档案来源、合成情景、CASAS回放、推荐与人工确认、照护人员接单及反馈、管理员复核关闭、决策留痕、实际实验计算、家属单人范围与老人移动布局。机器可读结果见 `browser-check.json`，实际录屏见 `demo.webm`。
+已修复的迁移期缺陷：
 
-当前构建有大分块提示：主JavaScript约2.2 MB未压缩。本地运行和浏览器验证正常；未来可通过路由拆分及按需加载减少首次加载资源。Python测试存在一条Starlette/httpx兼容性弃用提示，未导致测试失败；依赖版本已锁定。
+- 后端业务 ID 为字符串（`TK-`、`EV-`、`REC-`、`WF-`），Flutter 模型曾按整数解析导致显示 `#0` 且动作无效；现全部按字符串处理。
+- 生产端口为 8765，Flutter 默认地址曾误写 8798；Web 同源、Windows `127.0.0.1:8765`、Android `10.0.2.2:8765` 已统一，登录页可修改服务器地址。
+- `Verify.ps1` 旧实现用 `Start-Process` + `WaitForExit(ms)` 取不到退出码；现改用 `System.Diagnostics.Process` 读取真实退出码。
+- Windows 标题中文乱码；`main.cpp` 改为 UTF-8 转义文本后重建。
+- Android Gradle 缓存跨盘（C: 的 pub cache 与 E: 的工程）导致 Kotlin 增量编译失败；`android/gradle.properties` 关闭 Kotlin 增量并改用 in-process 编译后通过。
 
-模型局限和实验比较的代价见 `EXPERIMENT_REPORT.md`。反馈用于复盘与离线候选训练，不会自动把最终安全结果当作原始窗口的正常标签。没有接入真实社区、真实短信、电话或真实救援调度。
+已知限制：
 
-打包时排除虚拟环境、node_modules、原始归档、数据库、登录会话、测试缓存和录屏中间文件。开发依赖与验证用数据库保留在工作目录，交付目录只保留可运行源码、预构建前端、处理后公开数据和文档。
+- 本机没有 Android 设备、模拟器与 system image，APK 已构建并通过清单校验，但未做真机安装运行；Android 端仅验证了构建与配置。
+- 本机无 macOS 构建机，iOS/macOS 未产出。
+- `docs/demo.webm` 是迁移前 Vue 版本录屏，仅作业务流程参考，界面以当前 Flutter 截图为准。
+- 未接入真实社区、短信、电话或救援调度；助手为规则模式，模型只解释证据与建议。
+- 服务空闲超过 30 分钟后老人会因缺少新活动数据进入「状态未知」，这是「数据缺失=未知」的既有规则，不是崩溃。
+
+## 历史记录（迁移前 Vue 版本，已由 Flutter 版替代）
+
+- 2026-11-10：修复本地启动入口，新增 `Stop.ps1`；后台隐藏启动、健康轮询、重复启动复用、停止校验均实测通过。
+- 2026-11-09 初版：Python 后端 21 项通过约 14 秒；`vue-tsc --noEmit` 通过；Vite 生产构建通过；1440×1080 桌面与 390×844 手机闭环通过；浏览器 JS 错误 0 条。机器可读结果见 `browser-check.json`（Vue 时代记录，仅存档）。

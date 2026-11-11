@@ -1,11 +1,11 @@
 param(
     [string]$PythonExecutable = '',
+    [string]$FlutterExecutable = '',
     [switch]$BackendOnly,
     [switch]$FrontendOnly,
     [switch]$InstallFrontendDependencies,
-    [switch]$Browser,
     [switch]$Package,
-    [ValidateRange(30,3600)][int]$StepTimeoutSeconds = 300
+    [ValidateRange(30,3600)][int]$StepTimeoutSeconds = 600
 )
 $ErrorActionPreference = 'Stop'
 Set-Location -LiteralPath $PSScriptRoot
@@ -13,8 +13,6 @@ if ($BackendOnly -and $FrontendOnly) { throw 'Choose only one of -BackendOnly an
 $runDirectory = Join-Path $PSScriptRoot ('runtime\verify\' + (Get-Date -Format 'yyyyMMdd-HHmmss') + '-' + [Guid]::NewGuid().ToString('N').Substring(0,8))
 New-Item -ItemType Directory -Path $runDirectory -Force | Out-Null
 $steps = [System.Collections.Generic.List[object]]::new()
-$serverProcess = $null
-$serverStartTicks = $null
 $failure = $null
 $oldEnvironment = @{}
 foreach ($name in @('LINAN_DB','LINAN_URL','LINAN_OUTPUT_DIR','LINAN_LLM_ENABLED','LINAN_VERIFY_ISOLATED','PYTHONUTF8')) {
@@ -32,20 +30,58 @@ function Invoke-VerificationStep([string]$Name, [string]$Executable, [string[]]$
     $started = [DateTime]::UtcNow
     Write-Host "Running $Name ..." -ForegroundColor Cyan
     $argumentLine = ($Arguments | ForEach-Object { Quote-NativeArgument $_ }) -join ' '
-    $process = Start-Process -FilePath $Executable -ArgumentList $argumentLine -WorkingDirectory $Directory -WindowStyle Hidden -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+    $fileName = $Executable
+    $processArguments = $argumentLine
+    if ($Executable -match '\.(bat|cmd)$') {
+        # Start-Process and CreateProcess cannot launch batch files directly.
+        $fileName = $env:ComSpec
+        $processArguments = '/d /s /c ""' + $Executable + '" ' + $argumentLine + '"'
+    }
+    $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
+    $startInfo.FileName = $fileName
+    $startInfo.Arguments = $processArguments
+    $startInfo.WorkingDirectory = $Directory
+    $startInfo.UseShellExecute = $false
+    $startInfo.CreateNoWindow = $true
+    $startInfo.RedirectStandardOutput = $true
+    $startInfo.RedirectStandardError = $true
+    $startInfo.StandardOutputEncoding = [System.Text.Encoding]::UTF8
+    $startInfo.StandardErrorEncoding = [System.Text.Encoding]::UTF8
+    $process = [System.Diagnostics.Process]::new()
+    $process.StartInfo = $startInfo
+    [void]$process.Start()
+    $outputTask = $process.StandardOutput.ReadToEndAsync()
+    $errorTask = $process.StandardError.ReadToEndAsync()
     $finished = $process.WaitForExit($StepTimeoutSeconds * 1000)
     if (-not $finished) {
-        # This handle belongs to the process just started by this step.
-        $process.Kill()
+        try { $process.Kill($true) } catch {}
+        $process.WaitForExit()
+    } else {
+        # Ensure redirected streams are flushed after the process exits.
         $process.WaitForExit()
     }
+    $standardOutput = $outputTask.GetAwaiter().GetResult()
+    $standardError = $errorTask.GetAwaiter().GetResult()
+    $utf8 = [System.Text.UTF8Encoding]::new($false)
+    [System.IO.File]::WriteAllText($stdout, $standardOutput, $utf8)
+    [System.IO.File]::WriteAllText($stderr, $standardError, $utf8)
     $exitCode = if ($finished) { $process.ExitCode } else { -1 }
     $steps.Add([ordered]@{name=$Name;success=($exitCode -eq 0);exit_code=$exitCode;timed_out=(-not $finished);seconds=[Math]::Round(([DateTime]::UtcNow-$started).TotalSeconds,2);stdout=$stdout;stderr=$stderr})
-    if (Test-Path -LiteralPath $stdout) { Get-Content -LiteralPath $stdout -Tail 30 | Write-Host }
+    if ($standardOutput) { ($standardOutput -split "`r?`n" | Select-Object -Last 30) | Write-Host }
     if ($exitCode -ne 0) {
-        if (Test-Path -LiteralPath $stderr) { Get-Content -LiteralPath $stderr -Tail 30 | Write-Host }
+        if ($standardError) { ($standardError -split "`r?`n" | Select-Object -Last 30) | Write-Host }
         throw "$Name failed (exit $exitCode). See $runDirectory"
     }
+}
+
+function Resolve-Flutter {
+    if ($FlutterExecutable) { return (Get-Command $FlutterExecutable -ErrorAction Stop).Source }
+    $onPath = Get-Command flutter -ErrorAction SilentlyContinue | Select-Object -First 1
+    $candidates = @($onPath.Source, 'E:\tools\flutter\bin\flutter.bat', (Join-Path $env:LOCALAPPDATA 'flutter\bin\flutter.bat'))
+    foreach ($candidate in $candidates) {
+        if ($candidate -and (Test-Path -LiteralPath $candidate)) { return $candidate }
+    }
+    throw 'Flutter SDK not found. Run Setup.ps1 -RebuildFrontend with the SDK on PATH, or pass -FlutterExecutable.'
 }
 
 try {
@@ -61,57 +97,20 @@ try {
         Invoke-VerificationStep 'backend' $pythonPath @('-m','pytest','tests','-q','-p','no:cacheprovider','--tb=short','-o','faulthandler_timeout=60','--basetemp',(Join-Path $runDirectory 'pytest'))
     }
     if (-not $BackendOnly) {
-        $frontendDirectory = Join-Path $PSScriptRoot 'frontend'
+        $appDirectory = Join-Path $PSScriptRoot 'app'
+        $flutter = Resolve-Flutter
         if ($InstallFrontendDependencies) {
-            Push-Location -LiteralPath $frontendDirectory
-            try {
-                & pnpm install --frozen-lockfile
-                if ($LASTEXITCODE -ne 0) { throw 'Locked frontend dependency installation failed.' }
-            } finally { Pop-Location }
+            Invoke-VerificationStep 'flutter-pub' $flutter @('pub','get') $appDirectory
         }
-        $nodePath = (Get-Command node -ErrorAction Stop).Source
-        $typeChecker = Join-Path $frontendDirectory 'node_modules\vue-tsc\bin\vue-tsc.js'
-        $vite = Join-Path $frontendDirectory 'node_modules\vite\bin\vite.js'
-        if (-not (Test-Path -LiteralPath $typeChecker) -or -not (Test-Path -LiteralPath $vite)) {
-            throw 'Frontend dependencies are missing. Run Verify.ps1 -InstallFrontendDependencies, or pnpm install --frozen-lockfile in frontend/.'
-        }
-        Invoke-VerificationStep 'typescript' $nodePath @($typeChecker,'--noEmit') $frontendDirectory
-        Invoke-VerificationStep 'frontend-build' $nodePath @($vite,'build') $frontendDirectory
-    }
-    if ($Browser) {
-        $nodePath = (Get-Command node -ErrorAction Stop).Source
-        $env:LINAN_DB = Join-Path $runDirectory 'browser.sqlite3'
-        $env:LINAN_OUTPUT_DIR = Join-Path $runDirectory 'browser'
-        $env:LINAN_VERIFY_ISOLATED = '1'
-        $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback,0)
-        $listener.Start()
-        $port = $listener.LocalEndpoint.Port
-        $listener.Stop()
-        $env:LINAN_URL = "http://127.0.0.1:$port"
-        $serverProcess = Start-Process -FilePath $pythonPath -ArgumentList @('-m','uvicorn','backend.main:app','--host','127.0.0.1','--port',"$port") -WorkingDirectory $PSScriptRoot -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $runDirectory 'server.stdout.log') -RedirectStandardError (Join-Path $runDirectory 'server.stderr.log')
-        $serverStartTicks = $serverProcess.StartTime.ToUniversalTime().Ticks
-        $ready = $false
-        for ($attempt=0; $attempt -lt 60; $attempt++) {
-            $serverProcess.Refresh()
-            if ($serverProcess.HasExited) { break }
-            try {
-                $health = Invoke-RestMethod -Uri "$env:LINAN_URL/api/health" -TimeoutSec 1
-                if ($health.app -eq 'linan-community-guard') { $ready=$true; break }
-            } catch {}
-            Start-Sleep -Milliseconds 500
-        }
-        if (-not $ready) { throw "Isolated browser server did not start. See $runDirectory/server.stderr.log" }
-        Invoke-VerificationStep 'browser' $nodePath @((Join-Path $PSScriptRoot 'tests\agents-browser.cjs'))
+        Invoke-VerificationStep 'flutter-analyze' $flutter @('analyze','--no-pub') $appDirectory
+        Invoke-VerificationStep 'flutter-test' $flutter @('test','--no-pub') $appDirectory
+        Invoke-VerificationStep 'flutter-build-web' $flutter @('build','web','--release','--no-pub') $appDirectory
     }
     if ($Package) { Invoke-VerificationStep 'package' $pythonPath @((Join-Path $PSScriptRoot 'scripts\package.py')) }
 } catch {
     $failure = $_.Exception.Message
     Write-Host $failure -ForegroundColor Red
 } finally {
-    if ($serverProcess) {
-        $serverProcess.Refresh()
-        if (-not $serverProcess.HasExited -and $serverProcess.StartTime.ToUniversalTime().Ticks -eq $serverStartTicks) { $serverProcess.Kill(); $serverProcess.WaitForExit() }
-    }
     foreach ($name in $oldEnvironment.Keys) { [Environment]::SetEnvironmentVariable($name,$oldEnvironment[$name],'Process') }
     $report = [ordered]@{success=($null -eq $failure);created_utc=[DateTime]::UtcNow.ToString('o');steps=@($steps.ToArray());error=$failure;output_directory=$runDirectory;model_verification='rules and mocked-provider tests only; no live supplier call'}
     $report | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $runDirectory 'verification.json') -Encoding UTF8

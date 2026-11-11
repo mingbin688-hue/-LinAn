@@ -10,22 +10,36 @@ OUTPUT = ROOT / 'artifacts' / 'linan-source.zip'
 EXCLUDED_PARTS = {
     '.git', '.venv', 'node_modules', '__pycache__', '.pytest_cache',
     'runtime', 'raw', 'recordings', 'artifacts', '.cache', '.pnpm-store',
+    '.dart_tool', '.gradle', 'ephemeral', '.idea',
 }
-SENSITIVE_NAMES = {'credentials', 'credentials.json', 'token.json', 'tokens.json', 'secrets.json', 'server.json'}
-SENSITIVE_SUFFIXES = {'.db', '.sqlite', '.sqlite3', '.pem', '.key', '.pfx', '.p12', '.pyc', '.log'}
+
+# Keep only runnable Flutter artifacts; skip Gradle/CMake intermediates.
+BUILD_ALLOWLIST = (
+    ('web',),
+    ('windows', 'x64', 'runner', 'Release'),
+    ('app', 'outputs', 'flutter-apk', 'app-release.apk'),
+)
+SENSITIVE_NAMES = {'credentials', 'credentials.json', 'token.json', 'tokens.json', 'secrets.json', 'server.json', 'local.properties'}
+SENSITIVE_SUFFIXES = {'.db', '.sqlite', '.sqlite3', '.pem', '.key', '.pfx', '.p12', '.pyc', '.log', '.symbols'}
 
 
 def distributable(path):
     relative = path.relative_to(ROOT)
     name = path.name.lower()
-    return (
+    if not (
         path.is_file() and not path.is_symlink()
         and not EXCLUDED_PARTS.intersection(relative.parts)
         and name not in SENSITIVE_NAMES
         and path.suffix.lower() not in SENSITIVE_SUFFIXES
-        and not name.endswith(('-wal', '-shm', '-journal'))
+        and not name.endswith(('-wal', '-shm', '-journal', '.iml'))
         and not (name.startswith('.env') and not name.endswith(('.example', '.sample')))
-    )
+    ):
+        return False
+    parts = relative.parts
+    if parts[:2] == ('app', 'build'):
+        tail = parts[2:]
+        return any(tail[:len(prefix)] == prefix for prefix in BUILD_ALLOWLIST)
+    return 'build' not in parts
 
 
 def main():

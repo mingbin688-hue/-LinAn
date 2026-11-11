@@ -10,6 +10,7 @@ import time
 from typing import Literal
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Depends, Header, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator
@@ -150,6 +151,13 @@ def create_app(db_path=None, demo=True, background=True):
         provider.client.close()
 
     app=FastAPI(title='邻安 · 社区协同守护',version='1.0.0',lifespan=lifespan)
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origin_regex=r'^https?://(localhost|127\.0\.0\.1)(:\d+)?$',
+        allow_methods=['*'],
+        allow_headers=['*'],
+        max_age=600,
+    )
     app.state.db=db
     app.state.engine=engine
     app.state.provider=provider
@@ -485,13 +493,14 @@ def create_app(db_path=None, demo=True, background=True):
                 raise HTTPException(404,'工作流记录不存在')
             return value
 
-    dist=ROOT/'frontend'/'dist'
-    app.mount('/assets',StaticFiles(directory=dist/'assets',check_dir=False),name='assets')
+    dist=ROOT/'app'/'build'/'web'
+    if (dist/'index.html').exists():
+        app.mount('/',StaticFiles(directory=dist,html=True,check_dir=False),name='web')
 
     @app.get('/')
     def index():
         if not (dist/'index.html').exists():
-            raise HTTPException(503,'请先构建前端：cd frontend && pnpm install && pnpm build')
+            raise HTTPException(503,'请先构建 Flutter Web 前端：cd app && flutter build web --release')
         return FileResponse(dist/'index.html')
 
     if fresh and demo:

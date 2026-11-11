@@ -1,22 +1,22 @@
 # 邻安项目指令
 
-邻安是使用虚拟社区档案的比赛原型。后端为 FastAPI、SQLite、scikit-learn；前端为 Vue 3、TypeScript、Element Plus。业务 Agent 在现有风险引擎和调度状态机之上提供编排与解释。
+邻安是使用虚拟社区档案的比赛原型。后端为 FastAPI、SQLite、scikit-learn；前端为 Flutter 单代码库（Web / Windows / Android，Material 3 自绘）。业务 Agent 在现有风险引擎和调度状态机之上提供编排与解释。
 
 ## 工作入口
 
 - 后端：`backend/api.py`（鉴权与接口）、`engine.py`（风险和任务状态机）、`scheduler.py`（人员匹配）。
-- 前端：`frontend/src/`；构建产物 `frontend/dist/` 随源码交付。
-- 测试：`tests/test_*.py`；浏览器验收使用临时数据库，不能指向用户正在使用的数据库。
+- 前端：`app/lib/src/`（页面、状态、API 客户端）；`app/build/web/` 为随源码交付的 Web 构建。
+- 测试：`tests/test_*.py`；浏览器与三端验收使用临时数据库，不能指向用户正在使用的数据库。
 - 运行数据、令牌和模型产物保存在 `runtime/`，不纳入交付包。
 - Agent 配置、演示步骤和模型环境变量见 `docs/AGENT_WORKFLOWS.md`。
 
 ## 启动与验证
 
-首次安装执行 `powershell -ExecutionPolicy Bypass -File .\Setup.ps1`；需要重建前端时加 `-RebuildFrontend`。日常启动用 `Start-Linan.cmd`，或 `Start.ps1 -Background -OpenBrowser`。
+首次安装执行 `powershell -ExecutionPolicy Bypass -File .\Setup.ps1`；需要重建 Flutter Web 时加 `-RebuildFrontend`。日常启动用 `Start-Linan.cmd`，或 `Start.ps1 -Background -OpenBrowser`。
+统一验证：`powershell -ExecutionPolicy Bypass -File .\Verify.ps1`，依次跑后端 pytest、`flutter analyze`、`flutter test`、`flutter build web --release`；打包加 `-Package`。脚本在项目的 `.venv` 与原工作区 `..\..\work\.venv` 中查找 Python（`-PythonExecutable` 可指定），Flutter 依次查找 PATH、`E:\tools\flutter\bin\flutter.bat`（`-FlutterExecutable` 可指定）。
 
-统一验证：`powershell -ExecutionPolicy Bypass -File .\Verify.ps1`。浏览器验收加 `-Browser`；打包加 `-Package`。脚本在项目的 `.venv` 与原工作区 `..\..\work\.venv` 中查找 Python；也可通过 `-PythonExecutable` 指定。
 
-前端验证需要本地 `frontend/node_modules`；缺少时用 `Verify.ps1 -InstallFrontendDependencies` 按锁文件安装。使用 `-BackendOnly` 或 `-FrontendOnly` 可做针对性验证。测试临时目录统一放在 `runtime/verify/`，避免沙箱默认临时目录权限差异。每次验证保留独立日志与结果，不能把旧文档的通过记录当成本次结果。
+前端验证需要可用的 Flutter SDK；缺少时用 `Verify.ps1 -InstallFrontendDependencies` 执行 `flutter pub get`。使用 `-BackendOnly` 或 `-FrontendOnly` 可做针对性验证。测试临时目录统一放在 `runtime/verify/`，避免沙箱默认临时目录权限差异。每次验证保留独立日志与结果，不能把旧文档的通过记录当成本次结果。
 
 ## 必须保留的业务行为
 

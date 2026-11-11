@@ -38,4 +38,8 @@ CASAS回放将选定虚拟档案用于展示同一个公开单住户的测试窗
 | 4:20—5:10 | CASAS回放与实际实验，解释召回率局限和调度等待代价 |
 | 5:10—6:00 | 手机老人端、家属权限，以及社区访谈和独立验证的下一步 |
 
-`demo.webm` 是核心操作的无旁白实际录屏，可用作答辩素材。正式参赛可依据目标届次要求重新配音剪辑。
+`demo.webm` 是迁移前 Vue 版的核心操作录屏，仅作流程参考；当前 Flutter 版的界面截图见 `overview.png`、`mobile.png`，验证记录见 `VERIFICATION.md`。正式参赛可依据目标届次要求重新录制与配音。
+
+## 三端入口
+
+同一套 Flutter 代码可构建 Web、Windows 与 Android：Web 由 `Start.ps1` 在 8765 端口提供；Windows 直接运行 `app/build/windows/x64/runner/Release/linan_app.exe`；Android 安装 `app/build/app/outputs/flutter-apk/app-release.apk`。Windows 客户端默认连接 `http://127.0.0.1:8765`，Android 模拟器默认连接 `http://10.0.2.2:8765`，登录页的“服务器地址”可改为局域网 IP。演示密码与 Web 相同；跨设备演示时让手机与电脑处于同一局域网，并允许防火墙访问。

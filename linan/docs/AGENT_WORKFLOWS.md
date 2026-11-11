@@ -48,7 +48,7 @@ powershell -ExecutionPolicy Bypass -File .\Start.ps1 -Background -OpenBrowser
 
 ## 开发 Agent 与技能
 
-项目根 `AGENTS.md` 给出启动、验证和关键业务约束。`.codex/agents/` 的三个项目角色继承当前模型与权限：`linan-backend`、`linan-frontend`、`linan-verifier`。独立前后端工作可按文件范围委派，主 Agent 负责接口与最终集成。
+项目根 `AGENTS.md` 给出启动、验证和关键业务约束。`.codex/agents/` 的三个项目角色继承当前模型与权限：`linan-backend`、`linan-frontend`、`linan-verifier`。独立前后端工作可按文件范围委派，主 Agent 负责接口与最终集成；前端范围为 `app/lib/src/`。
 
 项目技能位于 `.agents/skills/`，可直接请求：
 
@@ -61,20 +61,20 @@ powershell -ExecutionPolicy Bypass -File .\Start.ps1 -Background -OpenBrowser
 ## 统一验证
 
 ```powershell
-# 后端测试、TypeScript 检查、前端构建
+# 后端测试、Flutter analyze/test、Flutter Web 构建
 powershell -ExecutionPolicy Bypass -File .\Verify.ps1
 # 针对性验证
 powershell -ExecutionPolicy Bypass -File .\Verify.ps1 -BackendOnly
 powershell -ExecutionPolicy Bypass -File .\Verify.ps1 -FrontendOnly
-# 缺少前端依赖时按 pnpm 锁文件安装，需要 Node.js 22+ 与 pnpm
+# 缺少 Flutter 依赖时执行 flutter pub get（需要 Flutter SDK）
 powershell -ExecutionPolicy Bypass -File .\Verify.ps1 -InstallFrontendDependencies
-# 隔离浏览器验收，并打包
-powershell -ExecutionPolicy Bypass -File .\Verify.ps1 -Browser -Package
+# 打包源码包
+powershell -ExecutionPolicy Bypass -File .\Verify.ps1 -Package
 ```
 
-浏览器检查需要已安装 Playwright 和浏览器，默认启动本机 Edge；使用其他浏览器时设置 `BROWSER_EXECUTABLE`。Playwright 不在标准模块搜索路径时，把 `PLAYWRIGHT_MODULE` 设置为该模块的绝对目录。新的 Agent 验收不录制视频，因此无需 FFmpeg；旧版 `tests/browser.cjs` 录屏仍需 FFmpeg。
+Flutter 前端验证依赖可用的 SDK；脚本依次查找 PATH、`E:\tools\flutter\bin\flutter.bat` 和 `%LOCALAPPDATA%\flutter`，也可用 `-FlutterExecutable` 指定。三端界面验收使用隔离实例：`Start.ps1` 以临时 `LINAN_DB` 启动后，用浏览器（可加 `?semantics=1` 便于辅助技术读取语义树）、`linan_app.exe` 或 APK 连接，验收结束只停止自己启动的服务，不使用或修改 `runtime/linan.sqlite3`。
 
-每次执行在 `runtime/verify/日期-编号/` 保存步骤日志和 `verification.json`；浏览器实例使用其中独立的 SQLite、随机本机端口和截图目录，结束只停止它自己启动的服务，不使用或修改 `runtime/linan.sqlite3`。单步默认超时300秒，可用 `-StepTimeoutSeconds` 调整。部分 Windows 受限沙箱不允许 asyncio 建立本机回环套接字，此时后端或浏览器检查应在允许本机网络的终端重跑；这是环境条件，不应据此改动业务权限或测试断言。
+每次执行在 `runtime/verify/日期-编号/` 保存步骤日志和 `verification.json`。单步默认超时 600 秒，可用 `-StepTimeoutSeconds` 调整。部分 Windows 受限沙箱不允许 asyncio 建立本机回环套接字，此时后端检查应在允许本机网络的终端重跑；这是环境条件，不应据此改动业务权限或测试断言。
 
 源码包保存在 `artifacts/linan-source.zip`，同目录清单包含各文件和压缩包 SHA256。打包不包含数据库、登录会话、凭证、缓存、依赖、原始数据归档和打包目录本身。它包含前端构建，解压后按 README 执行 Setup 即可运行。
 
@@ -84,6 +84,6 @@ powershell -ExecutionPolicy Bypass -File .\Verify.ps1 -Browser -Package
 2. 开启关注级电话核实自动派单；通过“信息上报”添加“请求联系”，查看匹配人员与自动派单节点。
 3. 切换对应 `staffN`，查看自己的助手和任务，接单、开始处理并提交已确认安全的反馈。
 4. 管理员在详情查看复核摘要，人工复核关闭；再展示紧急主动求助仍需人工确认派单。
-5. 切换家属和老人，展示单人范围和手机聊天界面。通过 `Verify.ps1 -Browser` 可在独立实例重复上述验收并保留截图。
+5. 切换家属和老人，展示单人范围和手机聊天界面。三端验收在独立实例上人工执行，结果记录在 `VERIFICATION.md`。
 
 紧急求助、数据未知和未解决反馈的处理边界与原有系统一致；公开数据和模型效果的局限继续参见实验报告。

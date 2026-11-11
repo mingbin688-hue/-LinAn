@@ -2,7 +2,7 @@
 
 完整闭环：**状态上报 → 异常识别 → 风险分级 → 人员推荐 → 自动或人工确认派单 → 处置反馈 → 人工复核关闭**。新增四类业务 Agent、四角色对话助手和可追踪的工作流中心；自动派单默认关闭，仅在管理员开启后用于1级关注的电话核实任务。
 
-技术：Vue 3 / TypeScript / Element Plus / ECharts + FastAPI / SQLite + scikit-learn / SciPy。
+技术：Flutter 3（Web / Windows / Android 共用一套 Dart 代码，Material 3 自绘界面）+ FastAPI / SQLite + scikit-learn / SciPy。图表使用 Flutter 原生绘制，不依赖 Web 图表库。
 
 ![社区工作台](docs/overview.png)
 
@@ -17,7 +17,7 @@ powershell -ExecutionPolicy Bypass -File .\Setup.ps1
 powershell -ExecutionPolicy Bypass -File .\Start.ps1
 ```
 
-包内包含构建好的前端与处理后的公开数据；运行不需要 Node.js、外部 AI API 或再次下载数据。首次安装 Python 依赖需要联网。重建前端才需要 Node.js 22+ 与 npm/pnpm：`Setup.ps1 -RebuildFrontend`。
+包内包含构建好的 Flutter Web 产物与处理后的公开数据；运行不需要 Flutter SDK、Node.js、外部 AI API 或再次下载数据。首次安装 Python 依赖需要联网。只有重建 Web 产物或自行构建 Windows / Android 客户端时才需要 Flutter 3.47+：`Setup.ps1 -RebuildFrontend`（可用 `-FlutterExecutable` 指定 SDK）。
 
 局域网演示可运行 `Start.ps1 -HostAddress 0.0.0.0`，手机访问该电脑的局域网 IP 和 8765 端口，Windows 防火墙需允许访问。前台运行按 Ctrl+C 停止；后台运行使用 `powershell -ExecutionPolicy Bypass -File .\Stop.ps1` 停止。日志位于 `runtime/server.stdout.log` 和 `runtime/server.stderr.log`。
 
@@ -68,8 +68,8 @@ powershell -ExecutionPolicy Bypass -File .\Start.ps1
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\Verify.ps1
-# 可选：独立数据库与端口的四角色浏览器验收，同时打包
-powershell -ExecutionPolicy Bypass -File .\Verify.ps1 -Browser -Package
+# 可选：验证通过后打包干净源码
+powershell -ExecutionPolicy Bypass -File .\Verify.ps1 -Package
 .\.venv\Scripts\python.exe scripts\experiments.py
 # 重新从官方归档下载并处理Aruba（下载约33 MB）
 .\.venv\Scripts\python.exe scripts\data_pipeline.py
@@ -81,7 +81,7 @@ powershell -ExecutionPolicy Bypass -File .\Verify.ps1 -Browser -Package
 .\.venv\Scripts\python.exe scripts\package.py
 ```
 
-新的浏览器验收通过 `Verify.ps1 -Browser` 运行 `tests/agents-browser.cjs`，自动使用独立数据库、端口与输出目录。需另行准备 Playwright，设置必要的 `PLAYWRIGHT_MODULE` 和可选的 `BROWSER_EXECUTABLE`。旧版录屏脚本 `tests/browser.cjs` 仍需 FFmpeg，并会修改指向服务的虚拟演示数据；不要指向需要保留状态的实例。两类检查的产物默认都保存在 `runtime/`，不覆盖旧版交付截图。
+前端验收由 `Verify.ps1` 依次执行 `flutter analyze`、`flutter test` 与 `flutter build web --release`；`-BackendOnly` / `-FrontendOnly` 可只跑一侧，`-Package` 追加干净源码包。验收使用独立日志目录 `runtime/verify/`，不覆盖旧记录。四角色验收步骤、截图与已知限制见 `docs/VERIFICATION.md` 与 `docs/*.png`。
 
 源码包输出至 `artifacts/linan-source.zip`，文件与 SHA256 清单为 `artifacts/linan-source.manifest.json`。
 
@@ -90,9 +90,8 @@ powershell -ExecutionPolicy Bypass -File .\Verify.ps1 -Browser -Package
 | 位置 | 内容 |
 |---|---|
 | `backend/` | 认证、SQLite、风险引擎、模型、调度与实验 |
-| `frontend/src/` | 六个社区页面与家属、老人移动端 |
-| `frontend/dist/` | 可直接运行的前端构建 |
-| `scripts/`、`tests/` | 数据流水线、实验、离线训练、打包和测试 |
+| `app/` | Flutter 单代码库：`app/lib/src/` 为页面与状态层，`app/build/web/` 为可直接运行的 Web 构建，`app/build/windows/`、`app/build/app/outputs/flutter-apk/` 为原生构建产物 |
+| `scripts/`、`tests/` | 数据流水线、实验、离线训练、打包和后端测试 |
 | `data/` | 标准化窗口、来源清单、实际实验结果 |
 | `docs/` | 用户手册、实验报告、录屏、截图与验证结果 |
 | `runtime/` | 首次启动生成的持久化数据库与离线候选模型 |
@@ -107,10 +106,10 @@ SQLite 写入使用 `BEGIN IMMEDIATE`，部分唯一索引保证一人只占用�
 - [用户手册与演示脚本](docs/USER_MANUAL.md)
 - [Agent、助手、开发工作流与新演示顺序](docs/AGENT_WORKFLOWS.md)
 - [实际实验报告](docs/EXPERIMENT_REPORT.md)
-- [实际操作录屏](docs/demo.webm)（无旁白）
-- [浏览器验证结果](docs/browser-check.json)、[验证说明](docs/VERIFICATION.md)
+- [迁移前 Vue 版操作录屏](docs/demo.webm)（仅作流程参考，界面以截图为准）
+- [验证说明与四角色验收记录](docs/VERIFICATION.md)
 
-Python 验证版本由 `requirements.lock.txt` 固定，前端版本由 `frontend/pnpm-lock.yaml` 固定。
+Python 验证版本由 `requirements.lock.txt` 固定，Flutter 版本由 `app/pubspec.lock` 固定。
 
 ## 数据署名
 
