@@ -39,7 +39,7 @@ $env:LINAN_LLM_MODEL = 'your-model-id'
 $linanCredential = Read-Host 'Provider API key' -AsSecureString
 $env:LINAN_LLM_API_KEY = [System.Net.NetworkCredential]::new('', $linanCredential).Password
 Remove-Variable linanCredential
-powershell -ExecutionPolicy Bypass -File .\Start.ps1 -Background -OpenBrowser
+powershell -ExecutionPolicy Bypass -File ./Start.ps1 -Background -OpenApp
 ```
 
 接口使用兼容 Chat Completions 的 `/chat/completions`，基础地址填写至 `/v1` 等供应商前缀，不要重复包含 `/chat/completions`。需要供应商支持模型输出的 JSON 内容，以及助手查询时的工具调用；调用轮数有上限。配置缺失、20秒超时、网络错误或输出校验失败时，保留规则结果并显示回退原因。
@@ -61,7 +61,7 @@ powershell -ExecutionPolicy Bypass -File .\Start.ps1 -Background -OpenBrowser
 ## 统一验证
 
 ```powershell
-# 后端测试、Flutter analyze/test、Flutter Web 构建
+# 后端测试、Flutter analyze/test、Windows Release 构建
 powershell -ExecutionPolicy Bypass -File .\Verify.ps1
 # 针对性验证
 powershell -ExecutionPolicy Bypass -File .\Verify.ps1 -BackendOnly
@@ -72,11 +72,11 @@ powershell -ExecutionPolicy Bypass -File .\Verify.ps1 -InstallFrontendDependenci
 powershell -ExecutionPolicy Bypass -File .\Verify.ps1 -Package
 ```
 
-Flutter 前端验证依赖可用的 SDK；脚本依次查找 PATH、`E:\tools\flutter\bin\flutter.bat` 和 `%LOCALAPPDATA%\flutter`，也可用 `-FlutterExecutable` 指定。三端界面验收使用隔离实例：`Start.ps1` 以临时 `LINAN_DB` 启动后，用浏览器（可加 `?semantics=1` 便于辅助技术读取语义树）、`linan_app.exe` 或 APK 连接，验收结束只停止自己启动的服务，不使用或修改 `runtime/linan.sqlite3`。
+Flutter 客户端验证依赖可用的 SDK；脚本依次查找 PATH、`E:/tools/flutter/bin/flutter.bat` 和 `%LOCALAPPDATA%/flutter`，也可用 `-FlutterExecutable` 指定。桌面验收使用隔离实例：`Start.ps1` 以临时 `LINAN_DB` 启动后运行 `linan_app.exe`；开发时可用 `flutter run -d windows` 热重载。Android 用 APK 或 `flutter run -d <device>` 连接。验收结束只停止自己启动的服务，不使用或修改 `runtime/linan.sqlite3`。
 
 每次执行在 `runtime/verify/日期-编号/` 保存步骤日志和 `verification.json`。单步默认超时 600 秒，可用 `-StepTimeoutSeconds` 调整。部分 Windows 受限沙箱不允许 asyncio 建立本机回环套接字，此时后端检查应在允许本机网络的终端重跑；这是环境条件，不应据此改动业务权限或测试断言。
 
-源码包保存在 `artifacts/linan-source.zip`，同目录清单包含各文件和压缩包 SHA256。打包不包含数据库、登录会话、凭证、缓存、依赖、原始数据归档和打包目录本身。它包含前端构建，解压后按 README 执行 Setup 即可运行。
+源码包保存在 `artifacts/linan-source.zip`，同目录清单包含各文件和压缩包 SHA256。打包不包含数据库、登录会话、凭证、缓存、依赖、原始数据归档和打包目录本身。它包含已构建的 Windows 客户端与 Android 安装包（若已生成），解压后按 README 启动后端与客户端。
 
 ## 答辩演示顺序
 
@@ -84,6 +84,6 @@ Flutter 前端验证依赖可用的 SDK；脚本依次查找 PATH、`E:\tools\fl
 2. 开启关注级电话核实自动派单；通过“信息上报”添加“请求联系”，查看匹配人员与自动派单节点。
 3. 切换对应 `staffN`，查看自己的助手和任务，接单、开始处理并提交已确认安全的反馈。
 4. 管理员在详情查看复核摘要，人工复核关闭；再展示紧急主动求助仍需人工确认派单。
-5. 切换家属和老人，展示单人范围和手机聊天界面。三端验收在独立实例上人工执行，结果记录在 `VERIFICATION.md`。
+5. 切换家属和老人，展示单人范围和手机端界面。桌面与 Android 验收在独立实例上人工执行，结果记录在 `VERIFICATION.md`。
 
 紧急求助、数据未知和未解决反馈的处理边界与原有系统一致；公开数据和模型效果的局限继续参见实验报告。

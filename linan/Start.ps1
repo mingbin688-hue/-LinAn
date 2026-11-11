@@ -3,7 +3,7 @@ param(
     [string]$HostAddress = "127.0.0.1",
     [ValidateRange(1024,65535)][int]$Port = 8765,
     [switch]$Background,
-    [switch]$OpenBrowser
+    [switch]$OpenApp
 )
 $ErrorActionPreference = "Stop"
 Set-Location -LiteralPath $PSScriptRoot
@@ -14,9 +14,15 @@ function Test-Linan {
         return ($response.status -eq 'ok' -and $response.app -eq 'linan-community-guard')
     } catch { return $false }
 }
+$appExe = Join-Path $PSScriptRoot "app/build/windows/x64/runner/Release/linan_app.exe"
+function Start-LinanApp {
+    if (Test-Path -LiteralPath $appExe) { Start-Process -FilePath $appExe; return $true }
+    Write-Warning "Windows app is not built yet. Run Setup.ps1 -RebuildApp first."
+    return $false
+}
 if (Test-Linan) {
     Write-Host "Linan is already running: $url" -ForegroundColor Green
-    if ($OpenBrowser) { Start-Process $url }
+    if ($OpenApp) { [void](Start-LinanApp) }
     exit 0
 }
 if (-not $PythonExecutable) {
@@ -25,9 +31,6 @@ if (-not $PythonExecutable) {
     if (Test-Path -LiteralPath $localPython) { $PythonExecutable = $localPython }
     elseif (Test-Path -LiteralPath $workspacePython) { $PythonExecutable = $workspacePython }
     else { $PythonExecutable = "python" }
-}
-if (-not (Test-Path -LiteralPath (Join-Path $PSScriptRoot "app\build\web\index.html"))) {
-    throw "Flutter Web build is missing. Run Setup.ps1 -RebuildFrontend first."
 }
 Write-Host "Linan: $url" -ForegroundColor Green
 if (-not $Background) {
@@ -62,5 +65,5 @@ if (-not $ready) {
     throw "Linan did not become ready. Check runtime/server.stderr.log. If port $Port is occupied, select another -Port."
 }
 Write-Host "Linan is running in the background. Close this window safely. Stop it with Stop.ps1." -ForegroundColor Green
-if ($OpenBrowser) { Start-Process $url }
+if ($OpenApp) { [void](Start-LinanApp) }
 exit 0

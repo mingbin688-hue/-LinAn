@@ -40,6 +40,6 @@ CASAS回放将选定虚拟档案用于展示同一个公开单住户的测试窗
 
 界面以 `overview.png`、`tasks.png`、`experiments.png`、`decision-trace.png`、`mobile.png` 为准，验证记录见 `VERIFICATION.md`。正式参赛时可依据现场设备重新录制演示视频与配音。
 
-## 三端入口
+## Windows 与 Android 客户端
 
-同一套 Flutter 代码可构建 Web、Windows 与 Android：Web 由 `Start.ps1` 在 8765 端口提供；Windows 直接运行 `app/build/windows/x64/runner/Release/linan_app.exe`；Android 安装 `app/build/app/outputs/flutter-apk/app-release.apk`。Windows 客户端默认连接 `http://127.0.0.1:8765`，Android 模拟器默认连接 `http://10.0.2.2:8765`，登录页的“服务器地址”可改为局域网 IP。演示密码与 Web 相同；跨设备演示时让手机与电脑处于同一局域网，并允许防火墙访问。
+同一套 Flutter 代码构建 Windows 与 Android 客户端：Windows 运行 `app/build/windows/x64/runner/Release/linan_app.exe`；Android 安装 `app/build/app/outputs/flutter-apk/app-release.apk`。Windows 客户端默认连接 `http://127.0.0.1:8765`，Android 模拟器默认连接 `http://10.0.2.2:8765`，登录页的“服务器地址”可改为局域网 IP。跨设备演示时让手机与电脑处于同一局域网，并允许防火墙访问。开发调试时后端用 `Start.ps1 -Background` 启动，客户端用 `flutter run -d windows` 热重载。

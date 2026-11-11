@@ -1,18 +1,19 @@
-# 邻安 · 本机完整版
+# 邻安 · 完整版
 
 ![Flutter](https://img.shields.io/badge/Flutter-3.47.9-02569B?logo=flutter&logoColor=white)
 ![Python](https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white)
 ![Tests](https://img.shields.io/badge/backend%20tests-56%20passed-brightgreen)
 ![License](https://img.shields.io/badge/license-Apache--2.0-blue)
 
-完整的社区守护闭环、四类业务 Agent、四角色对话助手与可追踪的工作流中心。前后端同仓库运行：FastAPI + SQLite + scikit-learn 提供服务，Flutter 3 提供 Web / Windows / Android 三端界面。
+完整的社区守护闭环、四类业务 Agent、四角色对话助手与可追踪的工作流中心。FastAPI + SQLite + scikit-learn 提供服务，Flutter 3 提供 Windows 桌面与 Android 客户端，所有功能均在本机运行、可断点调试。
 
 ![守护总览](docs/overview.png)
 
 ## 目录
 
 - [快速开始](#快速开始)
-- [三端入口](#三端入口)
+- [本地开发与调试](#本地开发与调试)
+- [客户端](#客户端)
 - [走完一次闭环](#走完一次闭环)
 - [页面与角色](#页面与角色)
 - [验证](#验证)
@@ -23,25 +24,26 @@
 
 ## 快速开始
 
-需要 **Python 3.12+**。首次安装联网拉取 Python 依赖；仓库已带 `app/build/web`，直接运行不需要 Flutter SDK。
+需要 **Python 3.12+**；构建 Windows 客户端还需要 Flutter 3.47+ 与 Visual Studio 2022 的 C++ 桌面开发组件。
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\Setup.ps1
-powershell -ExecutionPolicy Bypass -File .\Start.ps1 -Background -OpenBrowser
+powershell -ExecutionPolicy Bypass -File ./Setup.ps1
+powershell -ExecutionPolicy Bypass -File ./Setup.ps1 -RebuildApp -FlutterExecutable "E:/tools/flutter/bin/flutter.bat"
+powershell -ExecutionPolicy Bypass -File ./Start.ps1 -OpenApp
 ```
 
-- Web：<http://127.0.0.1:8765>
-- 接口文档：<http://127.0.0.1:8765/docs>
-- 停止后台服务：`powershell -ExecutionPolicy Bypass -File .\Stop.ps1`
+- 服务：<http://127.0.0.1:8765>，接口文档 <http://127.0.0.1:8765/docs>
+- 客户端：`app/build/windows/x64/runner/Release/linan_app.exe`
+- 停止后台服务：`powershell -ExecutionPolicy Bypass -File ./Stop.ps1`
 - 重复启动会复用同一个服务；日志在 `runtime/server.stdout.log` 与 `runtime/server.stderr.log`
 
-局域网演示：
+局域网演示（手机连电脑）：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\Start.ps1 -HostAddress 0.0.0.0
+powershell -ExecutionPolicy Bypass -File ./Start.ps1 -HostAddress 0.0.0.0
 ```
 
-手机访问电脑的局域网 IP 与 8765 端口，Windows 防火墙需放行；Android 客户端或手机浏览器均可。
+Android 客户端在登录页把服务器地址改为电脑的局域网 IP，Windows 防火墙需放行 8765。
 
 ### 演示账号
 
@@ -54,23 +56,38 @@ powershell -ExecutionPolicy Bypass -File .\Start.ps1 -HostAddress 0.0.0.0
 | `family` | 家属 | 仅王桂兰的状态、上报与消息 |
 | `elder` | 老人本人 | 仅王桂兰的报平安、求助与状态 |
 
-## 三端入口
+## 本地开发与调试
 
-同一套 `app/lib` Dart 代码，三种运行方式：
-
-| 端 | 启动 | 默认后端 | 说明 |
-|---|---|---|---|
-| Web | `Start.ps1` 托管 `app/build/web` | 同源 | 无需安装，浏览器直接打开 |
-| Windows | `flutter build windows --release` 后运行 `linan_app.exe` | `127.0.0.1:8765` | 桌面窗口，可缩到手机宽度演示 |
-| Android | `flutter build apk --release` 安装 APK | `10.0.2.2:8765` | 模拟器地址；真机在登录页改局域网 IP |
-
-登录页的“服务器地址”可保存自定义后端；Web 由 FastAPI 直接托管，因此默认同源。开发调试时后端已开启仅限 localhost 的 CORS。
-
-重建 Web：
+前后端分开启动，改客户端代码支持热重载：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\Setup.ps1 -RebuildFrontend -FlutterExecutable "E:/tools/flutter/bin/flutter.bat"
+# 终端 1：后端
+powershell -ExecutionPolicy Bypass -File ./Start.ps1 -Background
+
+# 终端 2：Windows 调试
+cd app
+flutter run -d windows
 ```
+
+- 只改后端：FastAPI 需要手动重启（`Stop.ps1` 后重新启动），测试用 `pytest tests -q`。
+- 只改客户端：`flutter analyze` 做静态检查，`flutter test` 跑组件测试。
+- 调试 Android：连接模拟器或真机后 `flutter run -d <device-id>`；构建安装包 `flutter build apk --release`。
+- 客户端默认地址：Windows `127.0.0.1:8765`，Android 模拟器 `10.0.2.2:8765`，登录页可修改并持久化。
+
+## 客户端
+
+| 端 | 构建 | 默认后端 |
+|---|---|---|
+| Windows 桌面 | `flutter build windows --release` | `127.0.0.1:8765` |
+| Android | `flutter build apk --release` | `10.0.2.2:8765` |
+
+统一重建 Windows 客户端：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File ./Setup.ps1 -RebuildApp -FlutterExecutable "E:/tools/flutter/bin/flutter.bat"
+```
+
+不提供网页版；`Start.ps1` 只启动 API 与桌面客户端，不再托管静态页面。
 
 ## 走完一次闭环
 
@@ -97,14 +114,14 @@ powershell -ExecutionPolicy Bypass -File .\Setup.ps1 -RebuildFrontend -FlutterEx
 ## 验证
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\Verify.ps1 -FlutterExecutable "E:/tools/flutter/bin/flutter.bat"
+powershell -ExecutionPolicy Bypass -File ./Verify.ps1 -FlutterExecutable "E:/tools/flutter/bin/flutter.bat"
 ```
 
-`Verify.ps1` 依次执行：后端 `pytest` → `flutter analyze` → `flutter test` → `flutter build web --release`。支持 `-BackendOnly`、`-FrontendOnly`、`-Package`、`-InstallFrontendDependencies`；每次验证写入独立的 `runtime/verify/<时间戳>/`，不会覆盖旧记录。
+`Verify.ps1` 依次执行：后端 `pytest` → `flutter analyze` → `flutter test` → `flutter build windows --release`。支持 `-BackendOnly`、`-FrontendOnly`、`-Package`、`-InstallFrontendDependencies`；每次验证写入独立的 `runtime/verify/<时间戳>/`，不会覆盖旧记录。
 
-2026-11-11 实测：后端 **56 passed / 16.3s**（1 条 Starlette-httpx 弃用警告）；`flutter analyze` No issues；`flutter test` 1 passed；Web 构建通过；管理员、照护、家属、老人四角色浏览器闭环与权限边界通过。详见 [VERIFICATION.md](docs/VERIFICATION.md)。
+2026-11-11 实测：后端 **56 passed**；`flutter analyze` No issues；`flutter test` 1 passed；Windows Release 构建通过；管理员、照护、家属、老人四角色客户端闭环与权限边界通过。详见 [VERIFICATION.md](docs/VERIFICATION.md)。
 
-浏览器验收重点：SOS 不降级、报平安不关闭紧急事件、10 分钟未回应自动升级、越权 403、照护人员只见自己的任务、任务与人员版本冲突拦截、拒单不循环重派、实验三表与 JSON 一致。
+客户端验收重点：SOS 不降级、报平安不关闭紧急事件、10 分钟未回应自动升级、越权 403、照护人员只见自己的任务、任务与人员版本冲突拦截、拒单不循环重派、实验三表与 JSON 一致。
 
 ## 数据与算法
 
@@ -133,8 +150,9 @@ powershell -ExecutionPolicy Bypass -File .\Verify.ps1 -FlutterExecutable "E:/too
 |---|---|
 | `backend/` | 鉴权、SQLite、风险引擎、调度、Agent/工作流、实验与回放 |
 | `app/lib/src/` | Flutter 页面、状态层、API 客户端、模型、主题与组件 |
-| `app/build/web/` | 已构建的 Web 产物（`Start.ps1` 直接托管） |
-| `app/android/`、`app/windows/` | 原生平台工程与构建配置 |
+| `app/windows/`、`app/android/` | 原生平台工程与构建配置 |
+| `app/build/windows/x64/runner/Release/` | Windows 客户端构建产物（本地生成，不进仓库） |
+| `app/build/app/outputs/flutter-apk/` | Android 安装包（本地生成，不进仓库） |
 | `scripts/` | 数据流水线、实验、离线训练、源码打包 |
 | `tests/` | 后端测试（56 项） |
 | `data/` | 标准化窗口、来源清单、实际实验结果 |
@@ -150,16 +168,16 @@ powershell -ExecutionPolicy Bypass -File .\Verify.ps1 -FlutterExecutable "E:/too
 ## 打包与清理
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\Verify.ps1 -Package
+powershell -ExecutionPolicy Bypass -File ./Verify.ps1 -Package
 ```
 
 或直接生成源码包：
 
 ```powershell
-.\.venv\Scripts\python.exe scripts\package.py
+./.venv/Scripts/python.exe scripts/package.py
 ```
 
-输出 `artifacts/linan-source.zip` 与 SHA256 清单。源码包排除 `runtime/`、数据库、会话令牌、`.venv`、`node_modules`、`.dart_tool`、Gradle/CMake 中间产物与 `.symbols` 调试文件，只保留可运行源码、Web 产物、Windows/APK 构建结果与处理后数据。
+输出 `artifacts/linan-source.zip` 与 SHA256 清单。源码包排除 `runtime/`、数据库、会话令牌、`.venv`、`.dart_tool`、Gradle/CMake 中间产物与 `.symbols` 调试文件，只保留可运行源码、Windows/APK 构建结果与处理后数据。
 
 ## 许可
 

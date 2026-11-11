@@ -18,57 +18,45 @@
 |---|---|
 | <img src="linan/docs/experiments.png" width="520" alt="实验对照"> | <img src="linan/docs/mobile.png" width="300" alt="手机端安心守护"> |
 
-## 两个可运行版本
+## 形态
 
-| 目录 | 版本 | 技术栈 |
-|---|---|---|
-| [`linan/`](linan/README.md) | 本机完整版：完整业务闭环、四角色助手、工作流中心、实验回放与统一验证 | FastAPI + SQLite + scikit-learn / SciPy · **Flutter 3**（Web / Windows / Android 单代码库） |
-| [`linan-web/`](linan-web/README.md) | 云端公开网页版：同一套业务规则，每位访客独立演示社区 | Cloudflare Workers + D1 + Drizzle · Vue 3 |
+本仓库只保留一套本地运行、可调试的完整版本：[`linan/`](linan/README.md)。
 
-本机版前端已从 Vue 迁移为 Flutter，Web、Windows、Android 共用 `linan/app/lib` 一套 Dart 代码；云端版保持独立，不影响本机闭环。
+| 组成 | 技术栈 |
+|---|---|
+| 后端 | FastAPI + SQLite + scikit-learn / SciPy |
+| 客户端 | Flutter 3（Windows 桌面与 Android 共用 `linan/app/lib` 一套 Dart 代码） |
+| 数据 | 20 位虚拟老人、4 位工作人员，合成基线 + CASAS Aruba 公开数据 |
+
+不提供网页版，也不依赖云端服务；所有功能都在本机以 Windows 客户端或 Android 客户端连接本机 FastAPI 运行。
 
 ## 快速开始
 
-### 本机完整版（Windows / Web）
-
-需要 **Python 3.12+**，首次安装需联网拉取依赖。仓库内已带构建好的 Flutter Web 产物，直接运行不需要 Flutter SDK 或 Node.js。
+准备：**Python 3.12+**、**Flutter 3.47+**（Windows 桌面构建还需要 Visual Studio 2022 的 C++ 桌面开发组件）。
 
 ```powershell
 cd linan
-powershell -ExecutionPolicy Bypass -File .\Setup.ps1
-powershell -ExecutionPolicy Bypass -File .\Start.ps1 -Background -OpenBrowser
+powershell -ExecutionPolicy Bypass -File ./Setup.ps1
+powershell -ExecutionPolicy Bypass -File ./Setup.ps1 -RebuildApp -FlutterExecutable "E:/tools/flutter/bin/flutter.bat"
+powershell -ExecutionPolicy Bypass -File ./Start.ps1 -OpenApp
 ```
 
-打开 <http://127.0.0.1:8765>，接口文档在 <http://127.0.0.1:8765/docs>。也可直接双击 `Start-Linan.cmd`；后台服务用 `Stop.ps1` 停止。
+`Start.ps1` 启动本机 8765 端口的 FastAPI 服务，并打开 Windows 客户端；接口文档在 <http://127.0.0.1:8765/docs>。后台启动用 `-Background`，停止用 `./Stop.ps1`。
 
-需要重建 Web 时才装 Flutter 3.47+：
+### 开发与调试
+
+后端与客户端分开运行，改代码后热重载：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\Setup.ps1 -RebuildFrontend -FlutterExecutable "E:/tools/flutter/bin/flutter.bat"
+# 终端 1：只启动后端（不自动打开客户端）
+powershell -ExecutionPolicy Bypass -File ./Start.ps1 -Background
+
+# 终端 2：Windows 调试，支持热重载
+cd app
+flutter run -d windows
 ```
 
-Windows 与 Android 原生构建：
-
-```powershell
-cd linan/app
-flutter build windows --release
-flutter build apk --release
-```
-
-产物分别在 `linan/app/build/windows/x64/runner/Release/` 与 `linan/app/build/app/outputs/flutter-apk/app-release.apk`。Windows 客户端默认连 `127.0.0.1:8765`，Android 模拟器默认连 `10.0.2.2:8765`，登录页可改服务器地址；手机真机演示时改为电脑的局域网地址。
-
-### 云端网页版（linan-web/）
-
-需要 **Node.js 24+**，依赖由 `pnpm-lock.yaml` 固定。
-
-```powershell
-cd linan-web
-pnpm install --frozen-lockfile
-node scripts/build.mjs
-node scripts/preview.mjs
-```
-
-本地兼容预览为 <http://127.0.0.1:8787>，使用 Node 内置 SQLite 模拟 D1；生产环境部署到 Cloudflare Workers + D1。
+Android 调试需要模拟器或真机：`flutter run -d <device-id>`，客户端默认连 `10.0.2.2:8765`，登录页可改为电脑的局域网地址。
 
 ## 演示账号
 
@@ -91,14 +79,12 @@ node scripts/preview.mjs
 
 ## 验证
 
-统一验证入口会依次执行后端测试、`flutter analyze`、`flutter test` 与 Web 构建：
-
 ```powershell
 cd linan
-powershell -ExecutionPolicy Bypass -File .\Verify.ps1 -FlutterExecutable "E:/tools/flutter/bin/flutter.bat"
+powershell -ExecutionPolicy Bypass -File ./Verify.ps1 -FlutterExecutable "E:/tools/flutter/bin/flutter.bat"
 ```
 
-2026-11-11 实测：后端 **56 passed**（16.3s）、`flutter analyze` 无问题、`flutter test` 1 passed、`flutter build web --release` 通过；管理员/照护/家属/老人四角色浏览器闭环与权限边界均通过。详细记录、截图与已知限制见 [验证说明](linan/docs/VERIFICATION.md)，实验数据见 [实验报告](linan/docs/EXPERIMENT_REPORT.md)。
+依次执行后端 `pytest`、`flutter analyze`、`flutter test` 与 Windows Release 构建。2026-11-11 实测：后端 **56 passed**、`flutter analyze` 无问题、`flutter test` 1 passed、Windows 构建通过；管理员/照护/家属/老人四角色客户端闭环与权限边界均通过。详细记录、截图与已知限制见 [验证说明](linan/docs/VERIFICATION.md)，实验数据见 [实验报告](linan/docs/EXPERIMENT_REPORT.md)。
 
 ## 数据与已知局限
 
@@ -108,12 +94,11 @@ powershell -ExecutionPolicy Bypass -File .\Verify.ps1 -FlutterExecutable "E:/too
 
 ## 文档
 
-- [本机完整版说明](linan/README.md)
+- [完整版说明](linan/README.md)
 - [用户手册与六分钟演示脚本](linan/docs/USER_MANUAL.md)
 - [Agent、助手与工作流](linan/docs/AGENT_WORKFLOWS.md)
 - [实验报告](linan/docs/EXPERIMENT_REPORT.md)
 - [验证记录](linan/docs/VERIFICATION.md)
-- [云端版说明](linan-web/README.md)
 
 ## 许可与署名
 

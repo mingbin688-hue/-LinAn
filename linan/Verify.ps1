@@ -81,7 +81,7 @@ function Resolve-Flutter {
     foreach ($candidate in $candidates) {
         if ($candidate -and (Test-Path -LiteralPath $candidate)) { return $candidate }
     }
-    throw 'Flutter SDK not found. Run Setup.ps1 -RebuildFrontend with the SDK on PATH, or pass -FlutterExecutable.'
+    throw 'Flutter SDK not found. Run Setup.ps1 -RebuildApp with the SDK on PATH, or pass -FlutterExecutable.'
 }
 
 try {
@@ -104,7 +104,7 @@ try {
         }
         Invoke-VerificationStep 'flutter-analyze' $flutter @('analyze','--no-pub') $appDirectory
         Invoke-VerificationStep 'flutter-test' $flutter @('test','--no-pub') $appDirectory
-        Invoke-VerificationStep 'flutter-build-web' $flutter @('build','web','--release','--no-pub') $appDirectory
+        Invoke-VerificationStep 'flutter-build-windows' $flutter @('build','windows','--release','--no-pub') $appDirectory
     }
     if ($Package) { Invoke-VerificationStep 'package' $pythonPath @((Join-Path $PSScriptRoot 'scripts\package.py')) }
 } catch {

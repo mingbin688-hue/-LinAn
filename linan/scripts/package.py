@@ -15,7 +15,6 @@ EXCLUDED_PARTS = {
 
 # Keep only runnable Flutter artifacts; skip Gradle/CMake intermediates.
 BUILD_ALLOWLIST = (
-    ('web',),
     ('windows', 'x64', 'runner', 'Release'),
     ('app', 'outputs', 'flutter-apk', 'app-release.apk'),
 )

@@ -1,17 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/semantics.dart';
-
 import 'src/app_state.dart';
 import 'src/screens/login.dart';
 import 'src/screens/shell.dart';
 import 'src/theme.dart';
 
 void main() {
-  WidgetsFlutterBinding.ensureInitialized();
-  // 浏览器验收可在地址后加 ?semantics=1 打开语义树，便于自动化读取控件。
-  if (Uri.base.queryParameters['semantics'] == '1') {
-    SemanticsBinding.instance.ensureSemantics();
-  }
   runApp(const LinanApp());
 }
 
