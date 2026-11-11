@@ -1,118 +1,166 @@
-# 邻安 · 独居老人社区协同守护智能决策系统
+# 邻安 · 本机完整版
 
-完整闭环：**状态上报 → 异常识别 → 风险分级 → 人员推荐 → 自动或人工确认派单 → 处置反馈 → 人工复核关闭**。新增四类业务 Agent、四角色对话助手和可追踪的工作流中心；自动派单默认关闭，仅在管理员开启后用于1级关注的电话核实任务。
+![Flutter](https://img.shields.io/badge/Flutter-3.47.9-02569B?logo=flutter&logoColor=white)
+![Python](https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white)
+![Tests](https://img.shields.io/badge/backend%20tests-56%20passed-brightgreen)
+![License](https://img.shields.io/badge/license-Apache--2.0-blue)
 
-技术：Flutter 3（Web / Windows / Android 共用一套 Dart 代码，Material 3 自绘界面）+ FastAPI / SQLite + scikit-learn / SciPy。图表使用 Flutter 原生绘制，不依赖 Web 图表库。
+完整的社区守护闭环、四类业务 Agent、四角色对话助手与可追踪的工作流中心。前后端同仓库运行：FastAPI + SQLite + scikit-learn 提供服务，Flutter 3 提供 Web / Windows / Android 三端界面。
 
-![社区工作台](docs/overview.png)
+![守护总览](docs/overview.png)
 
-## 立即体验
+## 目录
 
-当前 Codex 工作目录已安装依赖，双击 **Start-Linan.cmd** 自动后台启动并打开网页。也可运行 `powershell -ExecutionPolicy Bypass -File .\Start.ps1 -Background -OpenBrowser`，访问 **http://127.0.0.1:8765**。重复启动会复用已运行的邻安服务。关闭启动窗口不会停止后台服务；电脑重启后重新双击启动即可。
+- [快速开始](#快速开始)
+- [三端入口](#三端入口)
+- [走完一次闭环](#走完一次闭环)
+- [页面与角色](#页面与角色)
+- [验证](#验证)
+- [数据与算法](#数据与算法)
+- [文件结构](#文件结构)
+- [接口摘要](#接口摘要)
+- [打包与清理](#打包与清理)
 
-在其他 Windows 电脑解压源码包后，需要 **Python 3.12+**。首次运行：
+## 快速开始
+
+需要 **Python 3.12+**。首次安装联网拉取 Python 依赖；仓库已带 `app/build/web`，直接运行不需要 Flutter SDK。
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\Setup.ps1
-powershell -ExecutionPolicy Bypass -File .\Start.ps1
+powershell -ExecutionPolicy Bypass -File .\Start.ps1 -Background -OpenBrowser
 ```
 
-包内包含构建好的 Flutter Web 产物与处理后的公开数据；运行不需要 Flutter SDK、Node.js、外部 AI API 或再次下载数据。首次安装 Python 依赖需要联网。只有重建 Web 产物或自行构建 Windows / Android 客户端时才需要 Flutter 3.47+：`Setup.ps1 -RebuildFrontend`（可用 `-FlutterExecutable` 指定 SDK）。
+- Web：<http://127.0.0.1:8765>
+- 接口文档：<http://127.0.0.1:8765/docs>
+- 停止后台服务：`powershell -ExecutionPolicy Bypass -File .\Stop.ps1`
+- 重复启动会复用同一个服务；日志在 `runtime/server.stdout.log` 与 `runtime/server.stderr.log`
 
-局域网演示可运行 `Start.ps1 -HostAddress 0.0.0.0`，手机访问该电脑的局域网 IP 和 8765 端口，Windows 防火墙需允许访问。前台运行按 Ctrl+C 停止；后台运行使用 `powershell -ExecutionPolicy Bypass -File .\Stop.ps1` 停止。日志位于 `runtime/server.stdout.log` 和 `runtime/server.stderr.log`。
+局域网演示：
 
-## 演示账号
+```powershell
+powershell -ExecutionPolicy Bypass -File .\Start.ps1 -HostAddress 0.0.0.0
+```
+
+手机访问电脑的局域网 IP 与 8765 端口，Windows 防火墙需放行；Android 客户端或手机浏览器均可。
+
+### 演示账号
 
 所有账号初始密码均为 **Demo2026!**，只对应虚拟档案。
 
 | 账号 | 角色 | 权限范围 |
 |---|---|---|
-| `admin` | 社区管理员 | 全部演示档案、派单、复核、实验 |
-| `staff1`—`staff4` | 照护人员 | 自己的任务、当前关联服务对象、自己的人员状态 |
+| `admin` | 社区管理员 | 全部档案、派单、复核、实验、工作流 |
+| `staff1`—`staff4` | 照护人员 | 自己的任务、当前关联老人、自己的人员状态 |
 | `family` | 家属 | 仅王桂兰的状态、上报与消息 |
 | `elder` | 老人本人 | 仅王桂兰的报平安、求助与状态 |
 
-这是本地比赛原型。接入真实人员和资料前，应替换演示身份体系与密码，补齐部署级账户管理和数据授权流程。
+## 三端入口
+
+同一套 `app/lib` Dart 代码，三种运行方式：
+
+| 端 | 启动 | 默认后端 | 说明 |
+|---|---|---|---|
+| Web | `Start.ps1` 托管 `app/build/web` | 同源 | 无需安装，浏览器直接打开 |
+| Windows | `flutter build windows --release` 后运行 `linan_app.exe` | `127.0.0.1:8765` | 桌面窗口，可缩到手机宽度演示 |
+| Android | `flutter build apk --release` 安装 APK | `10.0.2.2:8765` | 模拟器地址；真机在登录页改局域网 IP |
+
+登录页的“服务器地址”可保存自定义后端；Web 由 FastAPI 直接托管，因此默认同源。开发调试时后端已开启仅限 localhost 的 CORS。
+
+重建 Web：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\Setup.ps1 -RebuildFrontend -FlutterExecutable "E:/tools/flutter/bin/flutter.bat"
+```
 
 ## 走完一次闭环
 
-1. 管理员进入“回放与实验”，选择“三位老人，同时需要关注”。也可演示数据离线、外出、冷启动或资源冲突。
+1. 管理员进入“回放与实验”，选择“三位老人，同时需要关注”；也可演示数据离线、外出、冷启动或资源冲突。
 2. 风险事件或老人详情显示信息来源、个人基线、判断依据与建议措施。
-3. 在任务中心计算派单建议，查看技能、人员状态和仿真到达时间；调整人员必须填写原因。
-4. 确认时重新检查任务与人员版本、技能、值班、可用性及占用；旧推荐失效时重新计算。
-5. 切换对应 `staffN`，接单 → 开始处理 → 提交结果。拒单需说明原因，随后释放人员占用。
-6. 管理员复核：已确认安全或数据问题已核查可以关闭；未能联系、仍需帮助必须继续跟进。
-7. 在详情查看风险输入快照、推荐理由、人工调整、操作人和时间。
+3. 在任务中心“计算派单建议”，查看技能、值班状态与仿真到达时间；调整人员必须填写原因。
+4. 确认时重新检查任务与人员版本、技能、值班、可用性及占用；旧推荐失效则重新计算。
+5. 切换对应 `staffN`：接单 → 开始处理 → 提交处置结果。拒单需说明原因并释放占用。
+6. 管理员复核：已确认安全或数据问题已核查才可关闭；未能联系、仍需帮助必须继续跟进。
+7. 在任务详情查看风险输入快照、推荐理由、人工调整、审计时间线与 Agent 运行节点。
 
-任务状态：待确认 → 已派单 → 已接单 → 处理中 → 待复核 → 已关闭。管理员也可提交直接核实结果后关闭尚未执行的任务。家属一次报平安不会自动关闭紧急事件。
+状态机：`待确认 → 已派单 → 已接单 → 处理中 → 待复核 → 已关闭`。管理员也可直接核实后关闭尚未执行的任务；家属一次报平安不会自动关闭紧急事件。
 
-## 数据、算法与实际局限
+## 页面与角色
 
-四角色可进入“邻安助手”查询自己有权查看的状态、风险与待办，回答附业务记录依据。管理员的“工作流中心”展示节点、模式和等待原因。未配置大模型时使用规则模式；可选配置、开发 Agent 与技能、统一验证及演示步骤见 [Agent 与工作流说明](docs/AGENT_WORKFLOWS.md)。
+| 角色 | 导航 |
+|---|---|
+| 管理员（8 页） | 守护总览、老人档案与状态、风险事件、任务中心、人员资源、邻安助手、工作流中心、回放与实验 |
+| 照护人员（4 页） | 我的任务、服务对象、我的状态、邻安助手 |
+| 家属 / 老人（3 页） | 安心守护、状态记录、邻安助手 |
 
-- 默认社区含 20 位虚拟老人、4 位工作人员；合成基线与 CASAS 单住户基线分开标注。
-- 每十五分钟生成因果特征：活动次数、60分钟滚动次数、距上次活动时长、时段。个人时段基线与 Isolation Forest 联合判断。
-- 历史不足十四天时显示基线学习中，保留人工上报与报平安规则；缺失数据单独显示未知。
-- 新档案累计至少十四个日期、672个历史活动窗口后，从自己的历史建立模型；训练排除当前待判断窗口。模型尚未准备好时继续显示学习中。
-- 主动求助直接进入紧急人工处理。关注事件的核实请求超过十分钟未获回应时按演示规则升级优先。
-- 调度按紧急程度、等待时间优先覆盖任务，再最小化本批总仿真到达时间；技能、值班、可用性和单任务容量均为硬约束。
-- 已复核反馈可导出并进入离线复盘；不把最终安全直接当作原始窗口的正常标签。候选模型离线训练，不自动覆盖在线模型。
+助手回答附带业务记录引用（老人、事件、任务），点击可跳转；工作流中心展示自动派单开关、三类流程图、Agent 目录与每次运行的全部节点、模式、耗时和输入输出。
 
-公开实验基于 CASAS Aruba，按完整日期顺序近似 60% / 20% / 20% 划分。基线只使用训练段，森林阈值只使用验证段。
-
-**当前公开数据结果存在明显局限：个性化方法对注入异常的事件召回率为45%，低于固定阈值的100%，不能作为独立安全保障。** 原始报警率不等于误报率；开发中已查看测试段初测结果，当前为开发评估，不是盲测或真实社区效果。调度对紧急任务有收益，也可能增加低优先级任务等待。
-
-## 可复现命令
-
-在项目根目录完成 Setup 后执行：
+## 验证
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\Verify.ps1
-# 可选：验证通过后打包干净源码
-powershell -ExecutionPolicy Bypass -File .\Verify.ps1 -Package
-.\.venv\Scripts\python.exe scripts\experiments.py
-# 重新从官方归档下载并处理Aruba（下载约33 MB）
-.\.venv\Scripts\python.exe scripts\data_pipeline.py
-# 或使用已获得的原始文件
-.\.venv\Scripts\python.exe scripts\data_pipeline.py --input data\raw\aruba.txt
-# 离线候选模型与已关闭反馈复盘材料，不替换在线模型
-.\.venv\Scripts\python.exe scripts\train_model.py
-# 打包干净源码
-.\.venv\Scripts\python.exe scripts\package.py
+powershell -ExecutionPolicy Bypass -File .\Verify.ps1 -FlutterExecutable "E:/tools/flutter/bin/flutter.bat"
 ```
 
-前端验收由 `Verify.ps1` 依次执行 `flutter analyze`、`flutter test` 与 `flutter build web --release`；`-BackendOnly` / `-FrontendOnly` 可只跑一侧，`-Package` 追加干净源码包。验收使用独立日志目录 `runtime/verify/`，不覆盖旧记录。四角色验收步骤、截图与已知限制见 `docs/VERIFICATION.md` 与 `docs/*.png`。
+`Verify.ps1` 依次执行：后端 `pytest` → `flutter analyze` → `flutter test` → `flutter build web --release`。支持 `-BackendOnly`、`-FrontendOnly`、`-Package`、`-InstallFrontendDependencies`；每次验证写入独立的 `runtime/verify/<时间戳>/`，不会覆盖旧记录。
 
-源码包输出至 `artifacts/linan-source.zip`，文件与 SHA256 清单为 `artifacts/linan-source.manifest.json`。
+2026-11-11 实测：后端 **56 passed / 16.3s**（1 条 Starlette-httpx 弃用警告）；`flutter analyze` No issues；`flutter test` 1 passed；Web 构建通过；管理员、照护、家属、老人四角色浏览器闭环与权限边界通过。详见 [VERIFICATION.md](docs/VERIFICATION.md)。
 
-## 文件与接口
+浏览器验收重点：SOS 不降级、报平安不关闭紧急事件、10 分钟未回应自动升级、越权 403、照护人员只见自己的任务、任务与人员版本冲突拦截、拒单不循环重派、实验三表与 JSON 一致。
+
+## 数据与算法
+
+- 20 位虚拟老人、4 位工作人员；合成基线与 CASAS Aruba 单住户基线分开标注。
+- 每 15 分钟生成因果特征：活动次数、60 分钟滚动次数、距上次活动时长、时段；个人时段基线与 Isolation Forest 联合判断。
+- 历史不足 14 天显示“基线学习中”；数据缺失单独显示未知；新档案累计足够历史窗口后，从自己的历史建立模型，训练排除当前待判断窗口。
+- 主动求助直接进入紧急人工处理；1 级关注且需电话核实的任务，仅在管理员开启自动派单后才可自动派出，数据未知、优先与紧急任务仍人工确认。
+- 人员推荐对全量待派任务按优先级分配；技能、值班、可用性、单人容量为硬约束；确认时复用版本校验。
+
+公开实验的取舍（完整数据见 [EXPERIMENT_REPORT.md](docs/EXPERIMENT_REPORT.md)）：
+
+| 指标 | 固定阈值基线 | 个性化模型 |
+|---|---|---|
+| 合成社区窗口召回 | 25.0% | **75.0%** |
+| 合成社区事件召回 | 100% | 100% |
+| CASAS 窗口召回 | 51.2% | 28.7% |
+| CASAS 事件召回 | 100% | **45.0%** |
+| 紧急任务平均响应 | 55.11 min | **25.67 min** |
+| 紧急任务 30 分钟覆盖 | 11.1% | **77.8%** |
+
+**局限**：个性化方法在 CASAS 上的事件召回率 45%，低于固定阈值，不能作为独立安全保障；整体平均响应与 P95 略变差（52.65→52.95、82.35→91.30 分钟），收益集中在紧急任务；开发阶段已查看测试段，非盲测。实验反馈只用于离线复盘与候选模型训练，不自动替换在线模型。
+
+## 文件结构
 
 | 位置 | 内容 |
 |---|---|
-| `backend/` | 认证、SQLite、风险引擎、模型、调度与实验 |
-| `app/` | Flutter 单代码库：`app/lib/src/` 为页面与状态层，`app/build/web/` 为可直接运行的 Web 构建，`app/build/windows/`、`app/build/app/outputs/flutter-apk/` 为原生构建产物 |
-| `scripts/`、`tests/` | 数据流水线、实验、离线训练、打包和后端测试 |
+| `backend/` | 鉴权、SQLite、风险引擎、调度、Agent/工作流、实验与回放 |
+| `app/lib/src/` | Flutter 页面、状态层、API 客户端、模型、主题与组件 |
+| `app/build/web/` | 已构建的 Web 产物（`Start.ps1` 直接托管） |
+| `app/android/`、`app/windows/` | 原生平台工程与构建配置 |
+| `scripts/` | 数据流水线、实验、离线训练、源码打包 |
+| `tests/` | 后端测试（56 项） |
 | `data/` | 标准化窗口、来源清单、实际实验结果 |
-| `docs/` | 用户手册、实验报告、录屏、截图与验证结果 |
-| `runtime/` | 首次启动生成的持久化数据库与离线候选模型 |
-| `.codex/agents/`、`.agents/skills/` | 项目角色 Agent 与开发、验收、演示技能 |
+| `docs/` | 用户手册、Agent 说明、实验报告、验证记录与截图 |
+| `runtime/` | 首次启动生成的数据库、日志、验证结果（不进源码包） |
 
-交互式接口文档：**http://localhost:8765/docs**。接口使用 Bearer 令牌和服务端角色、对象范围验证，包括 `/api/events`、`/api/elders`、`/api/incidents`、`/api/tasks`、`/api/dispatch/recommend`、`/api/dispatch/confirm`、`/api/replay/window`。
+## 接口摘要
 
-SQLite 写入使用 `BEGIN IMMEDIATE`，部分唯一索引保证一人只占用一项执行任务。事件ID去重；历史事件保留但不覆盖更新的当前状态；重启后继续扫描超时。停止服务后备份 `runtime/` 可保留演示状态。源码压缩包不包含会话、数据库、依赖目录或原始归档。
+`POST /api/auth/login`、`GET /api/elders`、`POST /api/events`、`GET /api/incidents`、`GET /api/tasks`、`POST /api/dispatch/recommend`、`POST /api/dispatch/confirm`、`POST /api/tasks/{id}/action`、`GET /api/staff`、`POST /api/assistant/messages`、`GET/PUT /api/workflows/settings`、`GET /api/workflows/runs`、`POST /api/experiments/run`、`POST /api/replay/window`、`GET /api/feedback/export`。
 
-## 交付文档
+接口使用 Bearer 令牌与服务端角色、对象范围校验。SQLite 写入使用 `BEGIN IMMEDIATE`，部分唯一索引保证一人只占用一项执行任务；事件按 ID 去重，历史事件保留但不覆盖更新的当前状态，重启后继续扫描超时。
 
-- [用户手册与演示脚本](docs/USER_MANUAL.md)
-- [Agent、助手、开发工作流与新演示顺序](docs/AGENT_WORKFLOWS.md)
-- [实际实验报告](docs/EXPERIMENT_REPORT.md)
-- [迁移前 Vue 版操作录屏](docs/demo.webm)（仅作流程参考，界面以截图为准）
-- [验证说明与四角色验收记录](docs/VERIFICATION.md)
+## 打包与清理
 
-Python 验证版本由 `requirements.lock.txt` 固定，Flutter 版本由 `app/pubspec.lock` 固定。
+```powershell
+powershell -ExecutionPolicy Bypass -File .\Verify.ps1 -Package
+```
 
-## 数据署名
+或直接生成源码包：
 
-Cook, Diane; Crandall, Aaron; Thomas, Brian. *CASAS Smart Home dataset (aruba, cairo, milan, tulum) — free living, motion, door, temperature, activity labels* (2025). Zenodo. [DOI:10.5281/zenodo.17180309](https://doi.org/10.5281/zenodo.17180309)，许可：[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)。
+```powershell
+.\.venv\Scripts\python.exe scripts\package.py
+```
 
-本项目只使用 Aruba；`aruba_windows.csv` 为原始运动传感器ON事件转换所得，方法、时间处理与校验值见脚本和 `data/source_manifest.json`。人物、联系人、工作人员与到达时间矩阵均为合成数据。
+输出 `artifacts/linan-source.zip` 与 SHA256 清单。源码包排除 `runtime/`、数据库、会话令牌、`.venv`、`node_modules`、`.dart_tool`、Gradle/CMake 中间产物与 `.symbols` 调试文件，只保留可运行源码、Web 产物、Windows/APK 构建结果与处理后数据。
+
+## 许可
+
+Apache License 2.0，见仓库根目录 [LICENSE](../LICENSE)；第三方组件声明见 [THIRD_PARTY_NOTICES.txt](THIRD_PARTY_NOTICES.txt)。数据集署名与许可见 [README 根文档](../README.md#许可与署名)。

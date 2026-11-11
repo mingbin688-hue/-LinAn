@@ -44,11 +44,10 @@ powershell -ExecutionPolicy Bypass -File .\Verify.ps1 -FlutterExecutable E:\tool
 
 - 本机没有 Android 设备、模拟器与 system image，APK 已构建并通过清单校验，但未做真机安装运行；Android 端仅验证了构建与配置。
 - 本机无 macOS 构建机，iOS/macOS 未产出。
-- `docs/demo.webm` 是迁移前 Vue 版本录屏，仅作业务流程参考，界面以当前 Flutter 截图为准。
 - 未接入真实社区、短信、电话或救援调度；助手为规则模式，模型只解释证据与建议。
 - 服务空闲超过 30 分钟后老人会因缺少新活动数据进入「状态未知」，这是「数据缺失=未知」的既有规则，不是崩溃。
 
 ## 历史记录（迁移前 Vue 版本，已由 Flutter 版替代）
 
 - 2026-11-10：修复本地启动入口，新增 `Stop.ps1`；后台隐藏启动、健康轮询、重复启动复用、停止校验均实测通过。
-- 2026-11-09 初版：Python 后端 21 项通过约 14 秒；`vue-tsc --noEmit` 通过；Vite 生产构建通过；1440×1080 桌面与 390×844 手机闭环通过；浏览器 JS 错误 0 条。机器可读结果见 `browser-check.json`（Vue 时代记录，仅存档）。
+- 2026-11-09 初版：Python 后端 21 项通过约 14 秒；`vue-tsc --noEmit` 通过；Vite 生产构建通过；1440×1080 桌面与 390×844 手机闭环通过；浏览器 JS 错误 0 条。早期机器可读结果已随 Vue 版本清理，仅保留本节文字记录。

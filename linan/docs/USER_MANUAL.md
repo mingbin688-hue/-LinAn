@@ -38,7 +38,7 @@ CASAS回放将选定虚拟档案用于展示同一个公开单住户的测试窗
 | 4:20—5:10 | CASAS回放与实际实验，解释召回率局限和调度等待代价 |
 | 5:10—6:00 | 手机老人端、家属权限，以及社区访谈和独立验证的下一步 |
 
-`demo.webm` 是迁移前 Vue 版的核心操作录屏，仅作流程参考；当前 Flutter 版的界面截图见 `overview.png`、`mobile.png`，验证记录见 `VERIFICATION.md`。正式参赛可依据目标届次要求重新录制与配音。
+界面以 `overview.png`、`tasks.png`、`experiments.png`、`decision-trace.png`、`mobile.png` 为准，验证记录见 `VERIFICATION.md`。正式参赛时可依据现场设备重新录制演示视频与配音。
 
 ## 三端入口
 
