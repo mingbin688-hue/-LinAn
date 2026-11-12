@@ -265,4 +265,16 @@ class ApiClient {
   Future<void> revokeMcpToken(String id) async {
     await _send('DELETE', '/api/mcp/tokens/$id');
   }
+
+  Future<Map<String, dynamic>> llmSettings() async =>
+      _map(await _send('GET', '/api/settings/llm'));
+
+  Future<Map<String, dynamic>> saveLlmSettings(Map<String, dynamic> body) async =>
+      _map(await _send('PUT', '/api/settings/llm', body: body));
+
+  Future<Map<String, dynamic>> testLlmConnection(Map<String, dynamic> body) async =>
+      _map(await _send('POST', '/api/settings/llm/test', body: body));
+
+  Future<Map<String, dynamic>> fetchLlmModels(Map<String, dynamic> body) async =>
+      _map(await _send('POST', '/api/settings/llm/models', body: body));
 }

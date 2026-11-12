@@ -71,16 +71,152 @@ class ToolQuery(BaseModel):
     task_id: str | None = Field(default=None,max_length=100)
 
 
+def _env_requested():
+    return os.getenv('LINAN_LLM_ENABLED','0').lower() in ('1','true','yes')
+
+
 class ModelProvider:
+    """OpenAI-compatible adapter whose configuration may come from env or the DB.
+
+    Once an administrator saves settings through the API, the llm.* rows in the
+    settings table are authoritative (including empty values), so clearing a key
+    never resurrects an environment secret.
+    """
+
     def __init__(self):
-        requested = os.getenv('LINAN_LLM_ENABLED','0').lower() in ('1','true','yes')
-        self.base_url = os.getenv('LINAN_LLM_BASE_URL','').rstrip('/')
-        self.model = os.getenv('LINAN_LLM_MODEL','')
-        self.key = os.getenv('LINAN_LLM_API_KEY','')
-        self.configured = bool(self.base_url and self.model and self.key)
-        self.enabled = requested and self.configured
-        self.configuration_reason = '模型配置不完整，使用规则模式' if requested and not self.configured else None
         self.client = httpx.Client(timeout=httpx.Timeout(20,connect=5),trust_env=False)
+        self.updated_at = None
+        self.updated_by = None
+        self.apply(os.getenv('LINAN_LLM_BASE_URL',''), os.getenv('LINAN_LLM_MODEL',''),
+                   os.getenv('LINAN_LLM_API_KEY',''), _env_requested(), source='environment')
+
+    def apply(self, base_url, model, api_key, requested, source='database'):
+        self.base_url = (base_url or '').strip().rstrip('/')
+        self.model = (model or '').strip()
+        self.key = (api_key or '').strip()
+        self.requested = bool(requested)
+        self.source = source
+        self.configured = bool(self.base_url and self.model and self.key)
+        self.enabled = self.requested and self.configured
+        self.configuration_reason = ('模型配置不完整，使用规则模式'
+                                     if self.requested and not self.configured else None)
+
+    def load(self, db):
+        """Apply stored settings, falling back to environment variables when unset."""
+        with db.transaction() as c:
+            rows = {r['key']: r['value'] for r in
+                    c.execute("SELECT key,value FROM settings WHERE key LIKE 'llm.%'")}
+        if rows:
+            self.apply(rows.get('llm.base_url',''), rows.get('llm.model',''),
+                       rows.get('llm.api_key',''), rows.get('llm.enabled','false') == 'true',
+                       source='database')
+            try:
+                self.updated_at = float(rows.get('llm.updated_at') or 0) or None
+            except ValueError:
+                self.updated_at = None
+            self.updated_by = rows.get('llm.updated_by') or None
+        else:
+            self.apply(os.getenv('LINAN_LLM_BASE_URL',''), os.getenv('LINAN_LLM_MODEL',''),
+                       os.getenv('LINAN_LLM_API_KEY',''), _env_requested(),
+                       source='environment')
+            self.updated_at = None
+            self.updated_by = None
+        return self
+
+    def describe(self):
+        """Admin-facing status; the API key itself is never returned."""
+        return {'mode':'llm' if self.enabled else 'rules','enabled':self.enabled,
+                'requested':self.requested,'configured':self.configured,
+                'base_url':self.base_url,'model':self.model,
+                'api_key_set':bool(self.key),
+                'api_key_hint':('••••'+self.key[-4:]) if self.key else '',
+                'source':self.source,'fallback_reason':self.configuration_reason,
+                'updated_at':self.updated_at,'updated_by':self.updated_by}
+
+    def test_connection(self, base_url, model, api_key, timeout=15.0):
+        """One-token OpenAI-compatible probe; never returns provider bodies."""
+        base_url = (base_url or '').strip().rstrip('/')
+        model = (model or '').strip()
+        api_key = (api_key or '').strip()
+        if not (base_url and model and api_key):
+            return {'ok':False,'error':'请先完整填写基础地址、模型名称和 API Key'}
+        started = time.perf_counter()
+        try:
+            response = self.client.post(base_url+'/chat/completions',
+                json={'model':model,'messages':[{'role':'user','content':'ping'}],'max_tokens':1},
+                headers={'Authorization':'Bearer '+api_key},timeout=timeout)
+        except httpx.TimeoutException:
+            return {'ok':False,'error':'连接模型服务超时，请检查网络或接口地址'}
+        except httpx.HTTPError:
+            return {'ok':False,'error':'无法连接模型服务，请检查基础地址与网络'}
+        latency = int((time.perf_counter()-started)*1000)
+        if response.status_code in (401,403):
+            return {'ok':False,'error':'API Key 无效或没有访问权限'}
+        if response.status_code == 404:
+            return {'ok':False,'error':'接口地址或模型不存在，请检查基础地址和模型名称'}
+        if response.status_code == 429:
+            return {'ok':False,'error':'模型服务配额或频率受限，请稍后再试'}
+        if response.status_code >= 500:
+            return {'ok':False,'error':'模型服务暂时不可用，请稍后再试'}
+        if response.status_code >= 400:
+            return {'ok':False,'error':f'模型服务拒绝了请求（HTTP {response.status_code}）'}
+        try:
+            payload = response.json()
+            if not payload['choices']:
+                raise ValueError('empty choices')
+        except Exception:
+            return {'ok':False,'error':'模型服务返回的不是 OpenAI 兼容响应'}
+        return {'ok':True,'latency_ms':latency,'model':str(payload.get('model') or model)[:120]}
+
+    def list_models(self, base_url, api_key, timeout=15.0):
+        """Fetch the provider's OpenAI-compatible model catalog; never returns bodies."""
+        base_url = (base_url or '').strip().rstrip('/')
+        api_key = (api_key or '').strip()
+        if not (base_url and api_key):
+            return {'ok':False,'error':'请先填写基础地址和 API Key'}
+        started = time.perf_counter()
+        try:
+            response = self.client.get(base_url+'/models',
+                headers={'Authorization':'Bearer '+api_key},timeout=timeout)
+        except httpx.TimeoutException:
+            return {'ok':False,'error':'获取模型列表超时，请检查网络或接口地址'}
+        except httpx.HTTPError:
+            return {'ok':False,'error':'无法连接模型服务，请检查基础地址与网络'}
+        latency = int((time.perf_counter()-started)*1000)
+        if response.status_code in (401,403):
+            return {'ok':False,'error':'API Key 无效或没有访问权限'}
+        if response.status_code == 404:
+            return {'ok':False,'error':'该服务不提供模型列表接口，可手动填写模型名称'}
+        if response.status_code == 429:
+            return {'ok':False,'error':'模型服务配额或频率受限，请稍后再试'}
+        if response.status_code >= 500:
+            return {'ok':False,'error':'模型服务暂时不可用，请稍后再试'}
+        if response.status_code >= 400:
+            return {'ok':False,'error':f'模型服务拒绝了请求（HTTP {response.status_code}）'}
+        try:
+            payload = response.json()
+        except Exception:
+            return {'ok':False,'error':'模型服务返回的不是 OpenAI 兼容响应'}
+        items = payload.get('data') if isinstance(payload, dict) else payload
+        if not isinstance(items, list):
+            return {'ok':False,'error':'模型服务返回的不是 OpenAI 兼容响应'}
+        models = []
+        seen = set()
+        for item in items:
+            if isinstance(item, str):
+                name = item
+            elif isinstance(item, dict):
+                name = item.get('id') or item.get('name') or item.get('model') or ''
+            else:
+                continue
+            name = str(name).strip()
+            if name and name not in seen:
+                seen.add(name)
+                models.append(name[:120])
+        models.sort(key=str.lower)
+        if not models:
+            return {'ok':False,'error':'服务未返回可用模型，可手动填写模型名称'}
+        return {'ok':True,'models':models[:500],'latency_ms':latency}
 
     def generate(self, base, context, tool=None, question=None):
         if not self.enabled:

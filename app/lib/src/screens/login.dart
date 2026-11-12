@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../api_client.dart';
 import '../app_state.dart';
 import '../theme.dart';
+import '../widgets/common.dart';
 
 class LoginScreen extends StatefulWidget {
   final AppState state;
@@ -76,26 +77,49 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: LayoutBuilder(
-        builder: (context, constraints) {
-          final wide = constraints.maxWidth >= 980;
-          if (wide) {
-            return Row(
-              children: [
-                const Expanded(flex: 11, child: _BrandPanel()),
-                Expanded(flex: 10, child: Center(child: SingleChildScrollView(child: _form(context)))),
-              ],
-            );
-          }
-          return SingleChildScrollView(
-            child: Column(
-              children: [
-                const _BrandPanel(compact: true),
-                Padding(padding: const EdgeInsets.fromLTRB(20, 22, 20, 34), child: _form(context)),
-              ],
+      backgroundColor: LinanColors.bg,
+      body: Stack(
+        children: [
+          const _LoginBackdrop(),
+          SafeArea(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final wide = constraints.maxWidth >= 980;
+                if (wide) {
+                  return Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const Expanded(flex: 11, child: Padding(
+                        padding: EdgeInsets.fromLTRB(64, 40, 32, 40),
+                        child: _BrandPanel(),
+                      )),
+                      Expanded(
+                        flex: 10,
+                        child: Center(
+                          child: SingleChildScrollView(
+                            padding: const EdgeInsets.symmetric(vertical: 40, horizontal: 32),
+                            child: _form(context),
+                          ),
+                        ),
+                      ),
+                    ],
+                  );
+                }
+                return SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(22, 28, 22, 40),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const _BrandPanel(compact: true),
+                      const SizedBox(height: 26),
+                      Center(child: _form(context)),
+                    ],
+                  ),
+                );
+              },
             ),
-          );
-        },
+          ),
+        ],
       ),
     );
   }
@@ -103,8 +127,7 @@ class _LoginScreenState extends State<LoginScreen> {
   Widget _form(BuildContext context) {
     final bootError = widget.state.bootError?.trim() ?? '';
     return Container(
-      constraints: const BoxConstraints(maxWidth: 396),
-      margin: const EdgeInsets.all(28),
+      constraints: const BoxConstraints(maxWidth: 404),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -114,42 +137,55 @@ class _LoginScreenState extends State<LoginScreen> {
             const SizedBox(height: 12),
           ],
           Container(
-            padding: const EdgeInsets.fromLTRB(28, 26, 28, 24),
+            padding: const EdgeInsets.fromLTRB(26, 26, 26, 22),
             decoration: BoxDecoration(
-              color: LinanColors.surface,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: LinanColors.border),
-              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: .04), blurRadius: 26, offset: const Offset(0, 10))],
+              color: LinanColors.surface.withValues(alpha: .94),
+              borderRadius: BorderRadius.circular(26),
+              border: Border.all(color: LinanColors.separator, width: .8),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: .07),
+                  blurRadius: 44,
+                  offset: const Offset(0, 18),
+                ),
+              ],
             ),
             child: Form(
               key: _formKey,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  const Text('登录邻安', style: TextStyle(fontSize: 21, fontWeight: FontWeight.w600, color: LinanColors.text)),
-                  const SizedBox(height: 5),
-                  const Text('用演示账号进入守护台，所有档案均为虚拟数据。', style: TextStyle(fontSize: 11, color: LinanColors.muted, height: 1.6)),
-                  const SizedBox(height: 22),
+                  Text('登录邻安',
+                      style: TextStyle(
+                          fontSize: 25, fontWeight: FontWeight.w700, color: LinanColors.text, letterSpacing: -.6)),
+                  const SizedBox(height: 6),
+                  Text('用演示账号进入守护台，所有档案均为虚拟数据。',
+                      style: TextStyle(fontSize: 12, color: LinanColors.muted, height: 1.6)),
+                  const SizedBox(height: 24),
                   const _FieldLabel('账号'),
                   TextFormField(
                     controller: _user,
-                    style: const TextStyle(fontSize: 12.5),
-                    decoration: const InputDecoration(prefixIcon: Icon(Icons.person_outline, size: 16), hintText: '例如 admin'),
+                    style: const TextStyle(fontSize: 13.5),
+                    decoration: const InputDecoration(
+                      prefixIcon: Icon(Icons.person_outline_rounded, size: 18),
+                      hintText: '例如 admin',
+                    ),
                     validator: (v) => (v == null || v.trim().isEmpty) ? '请输入账号' : null,
                     textInputAction: TextInputAction.next,
                   ),
-                  const SizedBox(height: 14),
-                  const _FieldLabel('密码'),
+                  SizedBox(height: 16),
+                  _FieldLabel('密码'),
                   TextFormField(
                     controller: _pass,
                     obscureText: _obscure,
-                    style: const TextStyle(fontSize: 12.5),
+                    style: TextStyle(fontSize: 13.5),
                     decoration: InputDecoration(
-                      prefixIcon: const Icon(Icons.lock_outline, size: 15),
+                      prefixIcon: Icon(Icons.lock_outline_rounded, size: 18),
                       hintText: '演示密码已预填',
                       suffixIcon: IconButton(
                         onPressed: () => setState(() => _obscure = !_obscure),
-                        icon: Icon(_obscure ? Icons.visibility_off_outlined : Icons.visibility_outlined, size: 15),
+                        tooltip: _obscure ? '显示密码' : '隐藏密码',
+                        icon: Icon(_obscure ? Icons.visibility_off_outlined : Icons.visibility_outlined, size: 17),
                         color: LinanColors.faint,
                       ),
                     ),
@@ -157,87 +193,108 @@ class _LoginScreenState extends State<LoginScreen> {
                     onFieldSubmitted: (_) => _submit(),
                   ),
                   if (_error != null) ...[
-                    const SizedBox(height: 12),
+                    SizedBox(height: 14),
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                      padding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                       decoration: BoxDecoration(
-                        color: LinanColors.danger.withValues(alpha: .07),
-                        borderRadius: BorderRadius.circular(7),
-                        border: Border.all(color: LinanColors.danger.withValues(alpha: .18)),
+                        color: LinanColors.danger.withValues(alpha: .08),
+                        borderRadius: BorderRadius.circular(12),
                       ),
-                      child: Text(_error!, style: const TextStyle(fontSize: 11, color: LinanColors.danger, height: 1.5)),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Icon(Icons.error_rounded,
+                              size: 15, color: LinanColors.danger),
+                          SizedBox(width: 7),
+                          Expanded(
+                            child: Text(_error!,
+                                style: TextStyle(fontSize: 11.5, color: LinanColors.danger, height: 1.5)),
+                          ),
+                        ],
+                      ),
                     ),
                   ],
-                  const SizedBox(height: 18),
+                  const SizedBox(height: 20),
                   FilledButton(
                     onPressed: _submitting ? null : _submit,
-                    style: FilledButton.styleFrom(minimumSize: const Size(0, 44)),
+                    style: FilledButton.styleFrom(minimumSize: const Size(0, 46)),
                     child: _submitting
-                        ? const SizedBox(width: 15, height: 15, child: CircularProgressIndicator(strokeWidth: 1.8, color: Colors.white))
-                        : const Text('进入守护台', style: TextStyle(fontSize: 13)),
+                        ? const SizedBox(
+                            width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                        : const Text('进入守护台', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
                   ),
-                  const SizedBox(height: 18),
+                  const SizedBox(height: 22),
                   Row(
                     children: [
-                      const Expanded(child: Divider()),
+                      Expanded(child: Divider()),
                       Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 8),
-                        child: Text('快速体验身份', style: TextStyle(fontSize: 9.5, color: LinanColors.faint)),
+                        padding: EdgeInsets.symmetric(horizontal: 10),
+                        child: Text('快速体验身份',
+                            style: TextStyle(fontSize: 11, color: LinanColors.faint, letterSpacing: .2)),
                       ),
-                      const Expanded(child: Divider()),
+                      Expanded(child: Divider()),
                     ],
                   ),
-                  const SizedBox(height: 11),
+                  SizedBox(height: 12),
                   Wrap(
-                    spacing: 7,
-                    runSpacing: 7,
+                    spacing: 8,
+                    runSpacing: 8,
                     children: [
-                      for (final item in const [
+                      for (final item in [
                         ('admin', '管理员'),
                         ('staff1', '照护人员'),
                         ('family', '家属'),
                         ('elder', '老人'),
                       ])
-                        ActionChip(
-                          label: Text(item.$2, style: const TextStyle(fontSize: 10.5)),
-                          onPressed: _submitting ? null : () => _quick(item.$1),
-                          backgroundColor: _user.text == item.$1 ? LinanColors.primarySoft : Colors.white,
-                          side: BorderSide(color: _user.text == item.$1 ? LinanColors.primary.withValues(alpha: .35) : LinanColors.border),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(7)),
-                          visualDensity: VisualDensity.compact,
+                        _QuickChip(
+                          label: item.$2,
+                          selected: _user.text == item.$1,
+                          onTap: _submitting ? null : () => _quick(item.$1),
                         ),
                     ],
                   ),
-                  const SizedBox(height: 8),
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: TextButton.icon(
-                      onPressed: () => setState(() => _serverOpen = !_serverOpen),
-                      icon: const Icon(Icons.dns_outlined, size: 13),
-                      label: const Text('服务器地址'),
-                      style: TextButton.styleFrom(padding: EdgeInsets.zero, minimumSize: const Size(0, 30)),
+                  SizedBox(height: 12),
+                  Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(10),
+                      onTap: () => setState(() => _serverOpen = !_serverOpen),
+                      child: Padding(
+                        padding: EdgeInsets.symmetric(vertical: 6),
+                        child: Row(
+                          children: [
+                            Icon(Icons.dns_outlined, size: 14, color: LinanColors.muted),
+                            const SizedBox(width: 6),
+                            Text('服务器地址',
+                                style: TextStyle(fontSize: 11.5, color: LinanColors.muted, fontWeight: FontWeight.w500)),
+                            const Spacer(),
+                            Icon(_serverOpen ? Icons.expand_less_rounded : Icons.expand_more_rounded,
+                                size: 17, color: LinanColors.faint),
+                          ],
+                        ),
+                      ),
                     ),
                   ),
                   if (_serverOpen) ...[
                     TextField(
                       controller: _server,
-                      style: const TextStyle(fontSize: 11.5),
+                      style: const TextStyle(fontSize: 12),
                       decoration: const InputDecoration(hintText: 'https://your-host 或留空使用默认地址'),
                     ),
                     const SizedBox(height: 6),
                     Row(
                       children: [
-                        const Expanded(
+                        Expanded(
                           child: Text('留空使用默认地址；桌面端默认 http://127.0.0.1:8765',
-                              style: TextStyle(fontSize: 9.5, color: LinanColors.faint, height: 1.5)),
+                              style: TextStyle(fontSize: 11, color: LinanColors.faint, height: 1.5)),
                         ),
                         TextButton(onPressed: _saveServer, child: const Text('保存')),
                       ],
                     ),
                   ],
-                  const SizedBox(height: 10),
-                  const Text('演示提示：同一虚拟社区内，家属只能查看关联老人，照护人员只能处理自己的任务。',
-                      style: TextStyle(fontSize: 9.5, color: LinanColors.faint, height: 1.6)),
+                  const SizedBox(height: 8),
+                  Text('演示提示：同一虚拟社区内，家属只能查看关联老人，照护人员只能处理自己的任务。',
+                      style: TextStyle(fontSize: 11, color: LinanColors.faint, height: 1.6)),
                 ],
               ),
             ),
@@ -248,7 +305,57 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 }
 
-/// 启动阶段（如后端不可达、会话失效）留下的错误提示，登录成功后由 AppState 清空。
+class _LoginBackdrop extends StatelessWidget {
+  const _LoginBackdrop();
+
+  @override
+  Widget build(BuildContext context) {
+    return Positioned.fill(
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [LinanColors.bgTop, LinanColors.bg, LinanColors.bgBottom],
+          ),
+        ),
+        child: Stack(
+          children: [
+            Positioned(
+              top: -180,
+              left: -120,
+              child: _Glow(color: LinanColors.primary.withValues(alpha: .13), size: 520),
+            ),
+            Positioned(
+              bottom: -200,
+              right: -140,
+              child: _Glow(color: LinanColors.teal.withValues(alpha: .10), size: 480),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _Glow extends StatelessWidget {
+  final Color color;
+  final double size;
+  const _Glow({required this.color, required this.size});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        gradient: RadialGradient(colors: [color, color.withValues(alpha: 0)]),
+      ),
+    );
+  }
+}
+
 class _BootErrorBar extends StatelessWidget {
   final String message;
   const _BootErrorBar({required this.message});
@@ -256,22 +363,22 @@ class _BootErrorBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      padding: EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
-        color: LinanColors.danger.withValues(alpha: .07),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: LinanColors.danger.withValues(alpha: .22)),
+        color: LinanColors.danger.withValues(alpha: .08),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: LinanColors.danger.withValues(alpha: .18)),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Padding(
+          Padding(
             padding: EdgeInsets.only(top: 1),
-            child: Icon(Icons.cloud_off_outlined, size: 15, color: LinanColors.danger),
+            child: Icon(Icons.cloud_off_outlined, size: 16, color: LinanColors.danger),
           ),
-          const SizedBox(width: 8),
+          SizedBox(width: 8),
           Expanded(
-            child: Text(message, style: const TextStyle(fontSize: 11, color: LinanColors.danger, height: 1.5)),
+            child: Text(message, style: TextStyle(fontSize: 11.5, color: LinanColors.danger, height: 1.5)),
           ),
         ],
       ),
@@ -285,9 +392,40 @@ class _FieldLabel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.only(bottom: 6),
-        child: Text(text, style: const TextStyle(fontSize: 11, color: LinanColors.muted, fontWeight: FontWeight.w500)),
+        padding: EdgeInsets.only(bottom: 7),
+        child: Text(text,
+            style: TextStyle(fontSize: 11.5, color: LinanColors.muted, fontWeight: FontWeight.w600, letterSpacing: .1)),
       );
+}
+
+class _QuickChip extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final VoidCallback? onTap;
+  const _QuickChip({required this.label, required this.selected, this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: selected ? LinanColors.primarySoft : LinanColors.surfaceAlt,
+      borderRadius: BorderRadius.circular(LinanColors.rPill),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(LinanColors.rPill),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 11.5,
+              fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+              color: selected ? LinanColors.primary : LinanColors.muted,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class _BrandPanel extends StatelessWidget {
@@ -296,82 +434,89 @@ class _BrandPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: EdgeInsets.fromLTRB(compact ? 22 : 54, compact ? 22 : 54, compact ? 22 : 54, compact ? 22 : 44),
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [Color(0xFF1B5A49), Color(0xFF123F33)],
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisAlignment: compact ? MainAxisAlignment.start : MainAxisAlignment.center,
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 38,
-                height: 38,
-                decoration: BoxDecoration(color: Colors.white.withValues(alpha: .14), borderRadius: BorderRadius.circular(10)),
-                alignment: Alignment.center,
-                child: const Text('安', style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w600)),
-              ),
-              const SizedBox(width: 11),
-              const Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('邻安', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w600, height: 1.2)),
-                  Text('LINAN COMMUNITY GUARD', style: TextStyle(color: Color(0xFF9BC3AF), fontSize: 7.5, letterSpacing: 1.4)),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisAlignment: compact ? MainAxisAlignment.start : MainAxisAlignment.center,
+      children: [
+        Row(
+          children: [
+            Container(
+              width: compact ? 42 : 46,
+              height: compact ? 42 : 46,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [LinanColors.brandTop, LinanColors.primary, LinanColors.brandDeep],
+                ),
+                borderRadius: BorderRadius.circular(14),
+                boxShadow: [
+                  BoxShadow(
+                    color: LinanColors.primary.withValues(alpha: .30),
+                    blurRadius: 20,
+                    offset: const Offset(0, 8),
+                  ),
                 ],
               ),
-            ],
-          ),
-          SizedBox(height: compact ? 16 : 46),
-          Text(
-            '让每一次异常，\n都有人接住。',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: compact ? 25 : 37,
-              fontWeight: FontWeight.w500,
-              height: 1.35,
-              letterSpacing: .5,
+              child: Icon(Icons.health_and_safety_rounded, size: compact ? 23 : 25, color: Colors.white),
             ),
-          ),
-          if (compact) ...[
-            const SizedBox(height: 10),
-            const Text('虚拟社区演示 · 规则优先，模型只解释证据',
-                style: TextStyle(color: Color(0xFFC7DDD1), fontSize: 10.5, height: 1.7)),
-            const SizedBox(height: 14),
-          ] else ...[
-            const SizedBox(height: 18),
-            ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 430),
-              child: const Text(
-                '把活动感知、风险判断、人员调度与处置复核收进同一条守护链路。规则先行，模型只解释证据；每一个动作都留痕，每一次关闭都要人工核实。',
-                style: TextStyle(color: Color(0xFFC7DDD1), fontSize: 11.5, height: 1.9),
-              ),
-            ),
-            const SizedBox(height: 34),
-            Wrap(
-              spacing: 18,
-              runSpacing: 12,
-              children: const [
-                _Feature(icon: Icons.sensors_outlined, title: '15 分钟活动感知', desc: '异常先分级再派人'),
-                _Feature(icon: Icons.rule_folder_outlined, title: '规则优先分级', desc: 'SOS 不降级、不合并掉'),
-                _Feature(icon: Icons.route_outlined, title: '派单与复核闭环', desc: '接单、处置、核实、留痕'),
+            const SizedBox(width: 12),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('邻安',
+                    style: TextStyle(
+                        fontSize: compact ? 19 : 21,
+                        fontWeight: FontWeight.w700,
+                        color: LinanColors.text,
+                        letterSpacing: -.4,
+                        height: 1.2)),
+                Text('LINAN COMMUNITY GUARD',
+                    style: TextStyle(fontSize: 11, letterSpacing: 1.5, color: LinanColors.faint, fontWeight: FontWeight.w500)),
               ],
             ),
-            const SizedBox(height: 40),
-            Container(height: 1, color: Colors.white.withValues(alpha: .13)),
-            const SizedBox(height: 18),
-            const Text('虚拟社区演示 · 数据来自合成档案与公开 CASAS 活动窗口',
-                style: TextStyle(color: Color(0xFF8FB6A3), fontSize: 9.5)),
           ],
+        ),
+        SizedBox(height: compact ? 18 : 48),
+        Text(
+          '让每一次异常，\n都有人接住。',
+          style: TextStyle(
+            color: LinanColors.text,
+            fontSize: compact ? 27 : 46,
+            fontWeight: FontWeight.w700,
+            height: 1.24,
+            letterSpacing: compact ? -.8 : -1.6,
+          ),
+        ),
+        SizedBox(height: compact ? 10 : 18),
+        ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 460),
+          child: Text(
+            compact
+                ? '虚拟社区演示 · 规则优先，模型只解释证据'
+                : '把活动感知、风险判断、人员调度与处置复核收进同一条守护链路。规则先行，模型只解释证据；每一个动作都留痕，每一次关闭都要人工核实。',
+            style: TextStyle(fontSize: compact ? 11.5 : 13, color: LinanColors.muted, height: 1.8),
+          ),
+        ),
+        if (!compact) ...[
+          const SizedBox(height: 34),
+          const Wrap(
+            spacing: 12,
+            runSpacing: 12,
+            children: [
+              _Feature(icon: Icons.sensors_rounded, title: '15 分钟活动感知', desc: '异常先分级再派人'),
+              _Feature(icon: Icons.rule_rounded, title: '规则优先分级', desc: 'SOS 不降级、不合并掉'),
+              _Feature(icon: Icons.route_rounded, title: '派单与复核闭环', desc: '接单、处置、核实、留痕'),
+            ],
+          ),
+          const SizedBox(height: 40),
+          Container(width: 44, height: 1, color: LinanColors.border),
+          SizedBox(height: 16),
+          Text('虚拟社区演示 · 数据来自合成档案与公开 CASAS 活动窗口',
+              style: TextStyle(fontSize: 11.5, color: LinanColors.faint)),
         ],
-      ),
+      ],
     );
   }
 }
@@ -385,26 +530,28 @@ class _Feature extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: 168,
+    return Container(
+      width: 206,
+      padding: EdgeInsets.all(13),
+      decoration: BoxDecoration(
+        color: LinanColors.surface.withValues(alpha: .78),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: LinanColors.separator, width: .7),
+      ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            width: 27,
-            height: 27,
-            decoration: BoxDecoration(color: Colors.white.withValues(alpha: .1), borderRadius: BorderRadius.circular(7)),
-            alignment: Alignment.center,
-            child: Icon(icon, color: const Color(0xFFBFDDCD), size: 14),
-          ),
-          const SizedBox(width: 9),
+          IconTile(icon, size: 30, iconSize: 16),
+          SizedBox(width: 9),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title, style: const TextStyle(color: Colors.white, fontSize: 10.5, fontWeight: FontWeight.w600)),
-                const SizedBox(height: 2),
-                Text(desc, style: const TextStyle(color: Color(0xFF9FC1AF), fontSize: 9, height: 1.5)),
+                Text(title,
+                    style: TextStyle(
+                        color: LinanColors.text, fontSize: 11.5, fontWeight: FontWeight.w600, height: 1.35)),
+                SizedBox(height: 2),
+                Text(desc, style: TextStyle(color: LinanColors.muted, fontSize: 11, height: 1.5)),
               ],
             ),
           ),

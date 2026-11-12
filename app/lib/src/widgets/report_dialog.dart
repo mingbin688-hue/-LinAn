@@ -137,7 +137,7 @@ class _ReportDialogState extends State<_ReportDialog> {
               children: [
                 Row(
                   children: [
-                    const Expanded(
+                    Expanded(
                       child: Text('信息上报', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: LinanColors.text)),
                     ),
                     IconButton(
@@ -148,8 +148,8 @@ class _ReportDialogState extends State<_ReportDialog> {
                     ),
                   ],
                 ),
-                const Text('上报会立即进入风险判断；报平安、外出确认不会降低未关闭的紧急事件。',
-                    style: TextStyle(fontSize: 10.5, color: LinanColors.muted, height: 1.6)),
+                Text('上报会立即进入风险判断；报平安、外出确认不会降低未关闭的紧急事件。',
+                    style: TextStyle(fontSize: 11.5, color: LinanColors.muted, height: 1.6)),
                 const SizedBox(height: 16),
                 DropdownButtonFormField<int>(
                   initialValue: _elderId,
@@ -162,11 +162,11 @@ class _ReportDialogState extends State<_ReportDialog> {
                   onChanged: (v) => setState(() => _elderId = v ?? _elderId),
                 ),
                 if (_elderId == null)
-                  const Padding(
+                  Padding(
                     padding: EdgeInsets.only(top: 6),
                     child: Text(
                       '当前账号尚未关联老人档案，请先选择老人或联系社区完成绑定后再上报。',
-                      style: TextStyle(fontSize: 10.5, color: LinanColors.danger, height: 1.5),
+                      style: TextStyle(fontSize: 11.5, color: LinanColors.danger, height: 1.5),
                     ),
                   ),
                 const SizedBox(height: 12),
@@ -236,8 +236,8 @@ class _ReportDialogState extends State<_ReportDialog> {
                   ),
                 ],
                 if (_error != null) ...[
-                  const SizedBox(height: 10),
-                  Text(_error!, style: const TextStyle(fontSize: 11, color: LinanColors.danger)),
+                  SizedBox(height: 10),
+                  Text(_error!, style: TextStyle(fontSize: 11, color: LinanColors.danger)),
                 ],
                 const SizedBox(height: 18),
                 Row(

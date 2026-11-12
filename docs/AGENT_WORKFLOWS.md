@@ -58,22 +58,29 @@
 
 ## 可选模型配置
 
-默认 `LINAN_LLM_ENABLED=0`。如果需要真实模型，在启动服务的同一 PowerShell 会话设置环境变量，然后启动邻安：
+推荐由管理员在客户端「设置」页配置：启用后填写兼容 Chat Completions 的基础地址、模型名称和 API Key，可先“测试连接”再保存。模型名称可以点“从服务商获取模型”读取 `/models` 目录并搜索选择，也保留手动填写作为兜底。配置立即写入本机 `runtime/` 数据库，对之后每次助手回答和工作流生效，无需重启服务；关闭启用开关即回到规则模式。
+
+- 密钥只写不读：页面与接口只回显尾号，保存、清除和连接自检会写审计但不含明文。清除密钥前需先关闭启用开关。
+- 模型目录：`POST /api/settings/llm/models` 复用表单地址与已保存密钥请求服务商 `/models`；服务商不提供该接口时提示手动填写，目录只用于选择，不落库。
+- 配置优先级：本机保存过任一 `llm.*` 项后，数据库就是权威配置；只有从未保存过时才使用环境变量，避免旧环境变量覆盖页面设置。
+- 启用但地址、模型或密钥不完整时保存返回 400；运行中缺失、20秒超时、网络错误或输出校验失败时，保留规则结果并显示回退原因。
+
+接口使用兼容 Chat Completions 的 `/chat/completions`，基础地址填写至 `/v1` 等供应商前缀，不要重复包含 `/chat/completions`。需要供应商支持模型输出的 JSON 内容，以及助手查询时的工具调用；调用轮数有上限。
+
+首次部署仍可用环境变量提供默认值（例如演示机）：
 
 ```powershell
 $env:LINAN_LLM_ENABLED = '1'
 $env:LINAN_LLM_BASE_URL = 'https://your-provider.example/v1'
 $env:LINAN_LLM_MODEL = 'your-model-id'
-# 将供应商凭证写入当前进程环境，不要把真实凭证保存到源码或截图。
+# 不要把真实凭证保存到源码或截图。
 $linanCredential = Read-Host 'Provider API key' -AsSecureString
 $env:LINAN_LLM_API_KEY = [System.Net.NetworkCredential]::new('', $linanCredential).Password
 Remove-Variable linanCredential
 powershell -ExecutionPolicy Bypass -File ./Start.ps1 -Background -OpenApp
 ```
 
-接口使用兼容 Chat Completions 的 `/chat/completions`，基础地址填写至 `/v1` 等供应商前缀，不要重复包含 `/chat/completions`。需要供应商支持模型输出的 JSON 内容，以及助手查询时的工具调用；调用轮数有上限。配置缺失、20秒超时、网络错误或输出校验失败时，保留规则结果并显示回退原因。
-
-环境变量在服务启动时读取。如果本机邻安已运行，`Start.ps1` 会复用旧服务；应先执行 `Stop.ps1` 再启动，以载入新配置。`Verify.ps1` 则临时关闭真实模型调用，测试规则模式和模拟供应商响应，不消费真实模型额度。**当前交付的模型适配以模拟响应验证；没有配置凭证并实际调用时，不代表已完成真实供应商联调。**
+环境变量在服务启动时读取；数据库中保存过配置后以页面设置为准。`Verify.ps1` 临时关闭真实模型调用，测试规则模式和模拟供应商响应，不消费真实额度。**当前交付的模型适配以模拟响应验证；没有在设置页配置凭证并“测试连接”成功时，不代表已完成真实供应商联调。**
 
 ## 开发 Agent 与技能
 

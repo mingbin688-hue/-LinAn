@@ -26,6 +26,7 @@ const List<NavDef> adminNav = [
   NavDef('assistant', '邻安助手'),
   NavDef('workflows', '工作流中心'),
   NavDef('lab', '回放与实验'),
+  NavDef('settings', '设置'),
 ];
 
 const List<NavDef> staffNav = [
@@ -65,6 +66,9 @@ class AppState extends ChangeNotifier {
   WorkflowStats? workflowStats;
   McpStatus? mcpStatus;
   bool workflowsLoading = false;
+  /// 管理员可编辑的云端模型配置；密钥只保留尾号提示。
+  LlmSettings? llm;
+  bool llmLoading = false;
   Map<String, dynamic> agentsInfo = {};
   /// 后端健康信息（规则/模型/数据结构版本），由 refresh 的重接口轮次更新。
   Map<String, dynamic>? health;
@@ -221,6 +225,8 @@ class AppState extends ChangeNotifier {
     jobs = [];
     workflowStats = null;
     mcpStatus = null;
+    llm = null;
+    llmLoading = false;
     recs = [];
     unassigned = [];
     experiment = null;
@@ -258,6 +264,80 @@ class AppState extends ChangeNotifier {
     if (key == 'workflows' && user?.isAdmin == true) {
       loadWorkflows();
     }
+    if (key == 'settings' && user?.isAdmin == true) {
+      loadLlmSettings();
+    }
+  }
+
+  /// 读取管理员的模型配置；页面每次进入都重新拉取，避免与其他管理员修改不一致。
+  Future<void> loadLlmSettings() async {
+    if (user?.isAdmin != true) return;
+    llmLoading = true;
+    _notify();
+    try {
+      llm = LlmSettings.fromJson(await api.llmSettings());
+    } on ApiException catch (e) {
+      if (e.status != 401) _toast(e.message);
+    } catch (_) {
+      _toast('模型配置加载失败，请检查后端连接');
+    } finally {
+      llmLoading = false;
+      _notify();
+    }
+  }
+
+  /// 保存模型配置；[apiKey] 为空表示保持已保存的密钥不变。
+  /// 失败时抛 [ApiException]，由设置页就地显示错误并保留用户输入。
+  Future<LlmSettings> saveLlmSettings({
+    required bool enabled,
+    required String baseUrl,
+    required String model,
+    String? apiKey,
+    bool clearKey = false,
+  }) async {
+    final body = <String, dynamic>{
+      'enabled': enabled,
+      'base_url': baseUrl.trim(),
+      'model': model.trim(),
+    };
+    if (clearKey) {
+      body['clear_api_key'] = true;
+    } else if (apiKey != null && apiKey.trim().isNotEmpty) {
+      body['api_key'] = apiKey.trim();
+    }
+    llm = LlmSettings.fromJson(await api.saveLlmSettings(body));
+    try {
+      agentsInfo = await api.agents();
+    } catch (_) {
+      // 配置已保存；状态栏信息下次轮询会补齐。
+    }
+    _notify();
+    _toast(enabled && (llm?.usesModel ?? false) ? '模型配置已保存并启用' : '模型配置已保存，当前使用规则模式');
+    return llm!;
+  }
+
+  /// 用当前表单值（或已保存值）做一次连接自检；不写入数据库。
+  Future<Map<String, dynamic>> testLlmConnection({
+    required String baseUrl,
+    required String model,
+    String? apiKey,
+  }) async {
+    final body = <String, dynamic>{
+      'base_url': baseUrl.trim(),
+      'model': model.trim(),
+    };
+    if (apiKey != null && apiKey.trim().isNotEmpty) body['api_key'] = apiKey.trim();
+    return api.testLlmConnection(body);
+  }
+
+  /// 向服务商拉取可用模型目录；只用于表单选择，不写入数据库。
+  Future<Map<String, dynamic>> fetchLlmModels({
+    required String baseUrl,
+    String? apiKey,
+  }) async {
+    final body = <String, dynamic>{'base_url': baseUrl.trim()};
+    if (apiKey != null && apiKey.trim().isNotEmpty) body['api_key'] = apiKey.trim();
+    return api.fetchLlmModels(body);
   }
 
   /// 拉取页面数据。
@@ -666,6 +746,8 @@ String pageSubtitle(AppState state) {
       return '风险响应、处置复核与对话查询的运行轨迹。';
     case 'lab':
       return '回放、对照实验与可复核的证据导出。';
+    case 'settings':
+      return '配置云端大模型接口；密钥只保存在本机。';
     case 'care':
       return '一次点击，把“我很好”或“我需要帮助”送到社区。';
     default:

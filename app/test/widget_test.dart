@@ -21,4 +21,22 @@ void main() {
     expect(find.byType(TextField), findsWidgets);
     expect(find.text('admin'), findsWidgets);
   });
+
+  testWidgets('登录页在 200% 字号下不溢出', (WidgetTester tester) async {
+    final state = AppState();
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: LinanTheme.build(),
+        home: MediaQuery(
+          data: const MediaQueryData(
+            size: Size(760, 1400),
+            textScaler: TextScaler.linear(2),
+          ),
+          child: LoginScreen(state: state),
+        ),
+      ),
+    );
+    await tester.pump();
+    expect(tester.takeException(), isNull);
+  });
 }

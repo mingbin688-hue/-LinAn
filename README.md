@@ -26,6 +26,7 @@
 |---|---|
 | 后端 | FastAPI + SQLite + scikit-learn / SciPy |
 | 客户端 | Flutter 3（Windows 桌面与 Android 共用 `app/lib` 一套 Dart 代码） |
+| 界面 | Flutter 自绘，遵循 Apple Human Interface Guidelines 的系统风格，跟随系统浅色/深色外观 |
 | 数据 | 20 位虚拟老人、4 位工作人员，合成基线 + CASAS Aruba 公开数据 |
 
 不提供网页版，也不依赖云端服务；所有功能都在本机以 Windows 客户端或 Android 客户端连接本机 FastAPI 运行。
@@ -73,6 +74,7 @@ Android 调试需要模拟器或真机：`flutter run -d <device-id>`，客户�
 - **规则先行**：主动求助直接进入紧急人工处理；报平安、外出确认与模型文字都不能降低或关闭未关闭的紧急事件。
 - **未知不是正常**：数据缺失单独显示"状态未知"；历史不足 14 天显示"基线学习中"，不生成虚构成熟基线。
 - **模型只解释**：风险等级由规则与离线模型决定，大模型只解释证据、查询授权记录并生成建议；每次读取工具与会话历史都重验角色和对象权限。
+- **模型可自配置**：管理员在“设置”页填写 OpenAI 兼容接口地址、模型与 API Key；模型名称可从服务商模型目录获取后选择，也可手动填写。密钥仅保存在本机数据库且只回显尾号，保存后下一次 Agent 运行生效，停用即回到规则模式。
 - **派单可复核**：按紧急程度与等待时间优先覆盖任务，再最小化本批仿真到达时间；确认时校验版本、技能、值班、可用性与单人容量。
 - **一切留痕**：风险输入快照、推荐理由、人工调整、操作人与时间、Agent 运行节点均可追溯；SQLite 写入使用 `BEGIN IMMEDIATE` 与部分唯一索引。
 
@@ -82,7 +84,7 @@ Android 调试需要模拟器或真机：`flutter run -d <device-id>`，客户�
 powershell -ExecutionPolicy Bypass -File ./Verify.ps1 -FlutterExecutable "E:/tools/flutter/bin/flutter.bat"
 ```
 
-依次执行后端 `pytest`、`flutter analyze`、`flutter test` 与 Windows Release 构建。2026-11-12 实测：后端 **70 passed**、`flutter analyze` 无问题、`flutter test` 4 passed、Windows 构建通过；管理员/照护/家属/老人四角色客户端闭环与权限边界均通过。详细记录、截图与已知限制见 [验证说明](docs/VERIFICATION.md)，本轮审计与修复清单见 [审计记录](docs/AUDIT_2026-11-12.md)，实验数据见 [实验报告](docs/EXPERIMENT_REPORT.md)。
+依次执行后端 `pytest`、`flutter analyze`、`flutter test` 与 Windows Release 构建。2026-11-12 实测：后端 **77 passed**、`flutter analyze` 无问题、`flutter test` 6 passed、Windows 构建通过；管理员/照护/家属/老人四角色客户端闭环与权限边界均通过，客户端还验证了浅色/深色外观与 200% 字号。详细记录、截图与已知限制见 [验证说明](docs/VERIFICATION.md)，本轮审计与修复清单见 [审计记录](docs/AUDIT_2026-11-12.md)，实验数据见 [实验报告](docs/EXPERIMENT_REPORT.md)。
 
 ## 数据与已知局限
 
@@ -106,7 +108,7 @@ powershell -ExecutionPolicy Bypass -File ./Verify.ps1 -FlutterExecutable "E:/too
 
 | 角色 | 导航 |
 |---|---|
-| 管理员（8 页） | 守护总览、老人档案与状态、风险事件、任务中心、人员资源、邻安助手、工作流中心、回放与实验 |
+| 管理员（9 页） | 守护总览、老人档案与状态、风险事件、任务中心、人员资源、邻安助手、工作流中心、回放与实验、设置 |
 | 照护人员（4 页） | 我的任务、服务对象、我的状态、邻安助手 |
 | 家属 / 老人（3 页） | 安心守护、状态记录、邻安助手 |
 
@@ -116,20 +118,20 @@ powershell -ExecutionPolicy Bypass -File ./Verify.ps1 -FlutterExecutable "E:/too
 
 | 位置 | 内容 |
 |---|---|
-| `backend/` | 应用工厂 `api.py`、`routes/` 六个路由模块、`schemas.py`/`deps.py`/`session.py`/`serializers.py` 公共层，以及风险引擎、调度、Agent/工作流、实验与回放 |
+| `backend/` | 应用工厂 `api.py`、`routes/` 七个路由模块、`schemas.py`/`deps.py`/`session.py`/`serializers.py` 公共层，以及风险引擎、调度、Agent/工作流、实验与回放 |
 | `app/lib/src/` | Flutter 页面、状态层、API 客户端、模型、主题与组件 |
 | `app/windows/`、`app/android/` | 原生平台工程与构建配置 |
 | `app/build/windows/x64/runner/Release/` | Windows 客户端构建产物（本地生成，不进仓库） |
 | `app/build/app/outputs/flutter-apk/` | Android 安装包（本地生成，不进仓库） |
 | `scripts/` | 数据流水线、实验、离线训练、源码打包 |
-| `tests/` | 后端测试（70 项）与 `app/test/` 客户端契约测试（3 项） |
+| `tests/` | 后端测试（77 项）与 `app/test/` 客户端契约测试（6 项） |
 | `data/` | 标准化窗口、来源清单、实际实验结果 |
 | `docs/` | 用户手册、Agent 说明、实验报告、验证记录与截图 |
 | `runtime/` | 首次启动生成的数据库、日志、验证结果（不进源码包） |
 
 ## 接口摘要
 
-`POST /api/auth/login`、`GET /api/elders`、`POST /api/events`、`GET /api/incidents`、`GET /api/tasks`、`POST /api/dispatch/recommend`、`POST /api/dispatch/confirm`、`POST /api/tasks/{id}/action`、`GET /api/staff`、`POST /api/assistant/messages`、`GET/PUT /api/workflows/settings`、`GET /api/workflows/runs`、`GET /api/workflows/stats`、`GET /api/workflows/jobs`、`POST /api/workflows/jobs/{id}/retry|cancel`、`POST /api/workflows/runs/{id}/retry`、`POST /mcp`、`GET /api/mcp/status`、`POST /api/mcp/tokens`、`DELETE /api/mcp/tokens/{id}`、`POST /api/demo/scenario`、`POST /api/experiments/run`、`POST /api/replay/window`、`GET /api/feedback/export`、`GET /api/agents`、`GET /api/assistant/sessions/{id}`、`GET /api/health`、`GET /api/notifications`。
+`POST /api/auth/login`、`GET /api/elders`、`POST /api/events`、`GET /api/incidents`、`GET /api/tasks`、`POST /api/dispatch/recommend`、`POST /api/dispatch/confirm`、`POST /api/tasks/{id}/action`、`GET /api/staff`、`POST /api/assistant/messages`、`GET/PUT /api/workflows/settings`、`GET /api/workflows/runs`、`GET /api/workflows/stats`、`GET /api/workflows/jobs`、`POST /api/workflows/jobs/{id}/retry|cancel`、`POST /api/workflows/runs/{id}/retry`、`POST /mcp`、`GET /api/mcp/status`、`POST /api/mcp/tokens`、`DELETE /api/mcp/tokens/{id}`、`POST /api/demo/scenario`、`POST /api/experiments/run`、`POST /api/replay/window`、`GET /api/feedback/export`、`GET /api/agents`、`GET/PUT /api/settings/llm`、`POST /api/settings/llm/test`、`POST /api/settings/llm/models`、`GET /api/assistant/sessions/{id}`、`GET /api/health`、`GET /api/notifications`。
 
 接口使用 Bearer 令牌与服务端角色、对象范围校验。SQLite 写入使用 `BEGIN IMMEDIATE`，部分唯一索引保证一人只占用一项执行任务；事件按 ID 去重，历史事件保留但不覆盖更新的当前状态，重启后继续扫描超时。
 

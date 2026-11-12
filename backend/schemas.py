@@ -113,3 +113,25 @@ class WorkflowSettings(BaseModel):
 class McpTokenIn(BaseModel):
     label: str = Field(default='', max_length=60)
     expires_hours: int = Field(default=24, ge=0, le=8760)
+
+
+class LlmSettingsIn(BaseModel):
+    """Admin model settings. A null api_key keeps the stored secret unchanged."""
+    enabled: bool = False
+    base_url: str = Field(default='', max_length=300)
+    model: str = Field(default='', max_length=120)
+    api_key: str | None = Field(default=None, max_length=400)
+    clear_api_key: bool = False
+
+
+class LlmTestIn(BaseModel):
+    """Optional overrides for the connection probe; null means the saved value."""
+    base_url: str | None = Field(default=None, max_length=300)
+    model: str | None = Field(default=None, max_length=120)
+    api_key: str | None = Field(default=None, max_length=400)
+
+
+class LlmModelsIn(BaseModel):
+    """Optional overrides for listing provider models; null means the saved value."""
+    base_url: str | None = Field(default=None, max_length=300)
+    api_key: str | None = Field(default=None, max_length=400)

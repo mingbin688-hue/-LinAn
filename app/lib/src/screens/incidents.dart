@@ -6,8 +6,12 @@ import '../models.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
 
+/// 风险事件：未关闭优先、按等级排序的事件流与处置详情。
+///
+/// 外层 Shell 已提供侧栏、工具栏与背景，本页只负责内容区。
 class IncidentsPage extends StatefulWidget {
   final AppState state;
+
   const IncidentsPage({super.key, required this.state});
 
   @override
@@ -15,178 +19,311 @@ class IncidentsPage extends StatefulWidget {
 }
 
 class _IncidentsPageState extends State<IncidentsPage> {
+  static const List<String> _openLabels = ['未关闭', '全部', '已关闭'];
+  static const List<String> _levelLabels = ['全部等级', '紧急', '优先', '关注', '未知'];
+  static const List<int?> _levelValues = [null, 3, 2, 1, 0];
+
   bool? _openFilter = true;
   int? _levelFilter;
 
-  @override
-  Widget build(BuildContext context) {
-    final s = widget.state;
-    final rows = s.incidents.where((i) {
+  int get _openIndex => _openFilter == true ? 0 : (_openFilter == null ? 1 : 2);
+
+  int get _levelIndex {
+    final index = _levelValues.indexOf(_levelFilter);
+    return index < 0 ? 0 : index;
+  }
+
+  List<Incident> _rows(AppState state) {
+    return state.incidents.where((i) {
       if (_openFilter != null && i.open != _openFilter) return false;
       if (_levelFilter != null && i.level != _levelFilter) return false;
       return true;
     }).toList()
       ..sort((a, b) {
         if (a.open != b.open) return a.open ? -1 : 1;
-        if (a.level != b.level) return b.level.compareTo(a.level);
+        final byLevel = b.level.compareTo(a.level);
+        if (byLevel != 0) return byLevel;
         return b.updated.compareTo(a.updated);
       });
+  }
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Container(
-          padding: const EdgeInsets.fromLTRB(24, 14, 24, 12),
-          decoration: const BoxDecoration(
-            color: LinanColors.surface,
-            border: Border(bottom: BorderSide(color: LinanColors.border)),
-          ),
-          child: Row(
-            children: [
-              ChoiceChip(
-                label: const Text('未关闭', style: TextStyle(fontSize: 10.5)),
-                selected: _openFilter == true,
-                onSelected: (_) => setState(() => _openFilter = true),
-                showCheckmark: false,
-                visualDensity: VisualDensity.compact,
-              ),
-              const SizedBox(width: 6),
-              ChoiceChip(
-                label: const Text('全部', style: TextStyle(fontSize: 10.5)),
-                selected: _openFilter == null,
-                onSelected: (_) => setState(() => _openFilter = null),
-                showCheckmark: false,
-                visualDensity: VisualDensity.compact,
-              ),
-              const SizedBox(width: 6),
-              ChoiceChip(
-                label: const Text('已关闭', style: TextStyle(fontSize: 10.5)),
-                selected: _openFilter == false,
-                onSelected: (_) => setState(() => _openFilter = false),
-                showCheckmark: false,
-                visualDensity: VisualDensity.compact,
-              ),
-              const SizedBox(width: 14),
-              const Text('等级', style: TextStyle(fontSize: 10, color: LinanColors.faint)),
-              const SizedBox(width: 6),
-              DropdownButton<int?>(
-                value: _levelFilter,
-                underline: const SizedBox.shrink(),
-                style: const TextStyle(fontSize: 10.5, color: LinanColors.text),
-                items: const [
-                  DropdownMenuItem(value: null, child: Text('全部')),
-                  DropdownMenuItem(value: 3, child: Text('紧急')),
-                  DropdownMenuItem(value: 2, child: Text('优先')),
-                  DropdownMenuItem(value: 1, child: Text('关注')),
-                  DropdownMenuItem(value: 0, child: Text('状态未知')),
-                ],
-                onChanged: (v) => setState(() => _levelFilter = v),
-              ),
-              const Spacer(),
-              Text('共 ${rows.length} 条', style: const TextStyle(fontSize: 10, color: LinanColors.faint)),
-            ],
-          ),
-        ),
-        Expanded(
-          child: rows.isEmpty
-              ? const EmptyHint('没有符合条件的风险事件', icon: Icons.verified_outlined)
-              : Scrollbar(
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.fromLTRB(24, 16, 24, 26),
-                    child: Center(
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 1240),
-                        child: Column(
-                          children: [
-                            for (final i in rows)
-                              _IncidentRow(
-                                incident: i,
-                                task: _taskFor(s, i.id),
-                                onTap: () => _open(context, i),
-                                onTask: () {
-                                  s.selectPage('tasks');
-                                },
-                              ),
-                          ],
-                        ),
+  @override
+  Widget build(BuildContext context) {
+    final state = widget.state;
+    final rows = _rows(state);
+    final openRows = state.incidents.where((i) => i.open).toList();
+    final urgent = openRows.where((i) => i.level >= 3).length;
+    final priority = openRows.where((i) => i.level == 2).length;
+    final filtered = _openFilter != true || _levelFilter != null;
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final wide = constraints.maxWidth >= 980;
+        final side = wide ? 28.0 : 16.0;
+        return SingleChildScrollView(
+          padding: EdgeInsets.fromLTRB(side, 0, side, 28),
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 1180),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  PageHeader(
+                    title: '风险事件',
+                    subtitle: '未关闭事件优先 · 按风险等级与更新时间排序',
+                    icon: Icons.warning_amber_rounded,
+                    accent: LinanColors.danger,
+                    padding: const EdgeInsets.fromLTRB(0, 22, 0, 16),
+                    actions: [
+                      OutlinedButton.icon(
+                        onPressed: state.loading ? null : () => state.refresh(),
+                        icon: state.loading
+                            ? const SizedBox(
+                                width: 14,
+                                height: 14,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Icon(Icons.refresh_rounded, size: 16),
+                        label: Text(state.loading ? '刷新中' : '刷新'),
                       ),
-                    ),
+                    ],
                   ),
-                ),
-        ),
-      ],
+                  _stats(openRows.length, urgent, priority, state.incidents.length - openRows.length),
+                  const SizedBox(height: 14),
+                  _filterCard(rows.length),
+                  const SizedBox(height: 14),
+                  if (rows.isEmpty)
+                    SectionCard(
+                      child: EmptyHint(
+                        filtered ? '没有符合条件的风险事件' : '还没有风险事件',
+                        icon: Icons.verified_outlined,
+                      ),
+                    )
+                  else
+                    for (var i = 0; i < rows.length; i++) ...[
+                      if (i > 0) const SizedBox(height: 10),
+                      _IncidentCard(
+                        incident: rows[i],
+                        task: _taskFor(state, rows[i].id),
+                        onOpen: () => _open(context, rows[i]),
+                        onTask: () => state.selectPage('tasks'),
+                      ),
+                    ],
+                ],
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 
-  void _open(BuildContext context, Incident incident) {
-    final s = widget.state;
-    final related = s.tasks.where((t) => t.incidentId == incident.id).toList();
-    showSideSheet(
+  Widget _stats(int open, int urgent, int priority, int closed) {
+    final tiles = [
+      StatTile(
+        label: '未关闭',
+        value: '$open',
+        unit: '条',
+        accent: LinanColors.amber,
+        icon: Icons.pending_actions_rounded,
+      ),
+      StatTile(
+        label: '紧急',
+        value: '$urgent',
+        unit: '条',
+        accent: LinanColors.danger,
+        icon: Icons.priority_high_rounded,
+      ),
+      StatTile(
+        label: '优先',
+        value: '$priority',
+        unit: '条',
+        accent: LinanColors.warm,
+        icon: Icons.flag_outlined,
+      ),
+      StatTile(
+        label: '已关闭',
+        value: '$closed',
+        unit: '条',
+        accent: LinanColors.green,
+        icon: Icons.task_alt_rounded,
+      ),
+    ];
+    return LayoutBuilder(
+      builder: (context, box) {
+        final cols = box.maxWidth >= 880 ? 4 : 2;
+        const gap = 12.0;
+        final width = (box.maxWidth - gap * (cols - 1)) / cols;
+        return Wrap(
+          spacing: gap,
+          runSpacing: gap,
+          children: [
+            for (final tile in tiles) SizedBox(width: width, child: tile),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _filterCard(int count) {
+    return SectionCard(
+      padding: EdgeInsets.fromLTRB(14, 14, 14, 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          LayoutBuilder(
+            builder: (context, box) {
+              final openControl = SegmentedControl(
+                labels: _openLabels,
+                selected: _openIndex,
+                onChanged: (i) => setState(
+                  () => _openFilter = i == 0 ? true : (i == 1 ? null : false),
+                ),
+              );
+              final levelControl = SegmentedControl(
+                labels: _levelLabels,
+                selected: _levelIndex,
+                onChanged: (i) => setState(() => _levelFilter = _levelValues[i]),
+              );
+              if (box.maxWidth >= 640) {
+                return Row(
+                  children: [
+                    Expanded(child: openControl),
+                    const SizedBox(width: 12),
+                    Expanded(child: levelControl),
+                  ],
+                );
+              }
+              return Column(
+                children: [
+                  openControl,
+                  const SizedBox(height: 10),
+                  levelControl,
+                ],
+              );
+            },
+          ),
+          SizedBox(height: 10),
+          Row(
+            children: [
+              Icon(Icons.sort_rounded, size: 13, color: LinanColors.faint),
+              SizedBox(width: 5),
+              Expanded(
+                child: Text(
+                  '未关闭优先 · 按风险等级排序',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 11.5, color: LinanColors.faint),
+                ),
+              ),
+              SizedBox(width: 8),
+              Text(
+                '$count 条',
+                style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: LinanColors.muted),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  CareTask? _taskFor(AppState state, String incidentId) {
+    for (final task in state.tasks) {
+      if (task.incidentId == incidentId) return task;
+    }
+    return null;
+  }
+
+  Future<void> _open(BuildContext context, Incident incident) {
+    final state = widget.state;
+    final related = state.tasks.where((t) => t.incidentId == incident.id).toList();
+    return showSideSheet(
       context,
       title: '${incident.elderName} · ${incident.title}',
-      subtitle: '事件 #${incident.id} · ${categoryLabel(incident.category)} · ${incident.open ? '未关闭' : '已关闭'}',
+      subtitle:
+          '事件 #${incident.id} · ${categoryLabel(incident.category)} · ${incident.open ? '未关闭' : '已关闭'}',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Row(
             children: [
               LevelPill(incident.level),
-              const SizedBox(width: 8),
-              Tag(incident.open ? '仍待处置' : '已人工关闭', color: incident.open ? LinanColors.amber : LinanColors.green),
-              const Spacer(),
-              Text('更新 ${formatStamp(incident.updated)}', style: const TextStyle(fontSize: 9.5, color: LinanColors.faint)),
+              SizedBox(width: 8),
+              Tag(
+                incident.open ? '仍待处置' : '已人工关闭',
+                color: incident.open ? LinanColors.amber : LinanColors.green,
+              ),
+              Expanded(
+                child: Text(
+                  '更新 ${formatStamp(incident.updated)}',
+                  textAlign: TextAlign.right,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 11, color: LinanColors.faint),
+                ),
+              ),
             ],
           ),
-          const SizedBox(height: 14),
-          const _MiniTitle('判断依据'),
-          for (final line in incident.evidence)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 7),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Padding(padding: EdgeInsets.only(top: 5), child: Dot(LinanColors.amber, size: 5)),
-                  const SizedBox(width: 8),
-                  Expanded(child: Text(line, style: const TextStyle(fontSize: 11.5, height: 1.65, color: LinanColors.text))),
-                ],
-              ),
+          SizedBox(height: 14),
+          SectionCard(
+            title: '判断依据',
+            icon: Icons.rule_rounded,
+            child: incident.evidence.isEmpty
+                ? const EmptyHint('暂无补充依据', icon: Icons.notes_rounded)
+                : _BulletList(incident.evidence),
+          ),
+          SizedBox(height: 12),
+          SectionCard(
+            title: '处置建议',
+            icon: Icons.lightbulb_outline_rounded,
+            child: Text(
+              incident.advice.isEmpty ? '按社区流程核实并留痕。' : incident.advice,
+              style: TextStyle(fontSize: 12.5, height: 1.65, color: LinanColors.text),
             ),
-          const SizedBox(height: 10),
-          const _MiniTitle('处置建议'),
-          Text(incident.advice.isEmpty ? '按社区流程核实并留痕。' : incident.advice,
-              style: const TextStyle(fontSize: 11.5, height: 1.7, color: LinanColors.muted)),
-          const SizedBox(height: 18),
-          const _MiniTitle('关联任务'),
-          if (related.isEmpty)
-            const Text('该事件还没有对应处置任务。', style: TextStyle(fontSize: 11, color: LinanColors.faint))
-          else
-            for (final t in related)
-              Container(
-                margin: const EdgeInsets.only(bottom: 8),
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                decoration: BoxDecoration(
-                  color: LinanColors.surfaceAlt,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: LinanColors.borderSoft),
-                ),
-                child: Row(
-                  children: [
-                    StatePill(t.state, compact: true),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text('任务 #${t.id} · ${skillName(t.requiredSkill)} · ${t.staffName.isEmpty ? '待派单' : t.staffName}',
-                          style: const TextStyle(fontSize: 10.5, color: LinanColors.text)),
-                    ),
-                    Text('查看', style: const TextStyle(fontSize: 10, color: LinanColors.primary)),
-                  ],
-                ),
-              ),
-          const SizedBox(height: 6),
+          ),
+          const SizedBox(height: 12),
+          SectionCard(
+            title: '关联任务',
+            icon: Icons.checklist_rounded,
+            trailing: Tag('${related.length} 个'),
+            padding: const EdgeInsets.fromLTRB(18, 17, 18, 8),
+            child: related.isEmpty
+                ? const EmptyHint('该事件还没有对应处置任务。', icon: Icons.assignment_outlined)
+                : Column(
+                    children: [
+                      for (var i = 0; i < related.length; i++)
+                        ListRow(
+                          leading: IconTile(
+                            Icons.assignment_rounded,
+                            size: 30,
+                            iconSize: 15,
+                            color: LinanColors.primary,
+                          ),
+                          title: '任务 #${related[i].id} · ${skillName(related[i].requiredSkill)}',
+                          subtitle:
+                              '${related[i].staffName.isEmpty ? '待派单' : related[i].staffName} · 更新 ${formatStamp(related[i].updated)}',
+                          trailing: StatePill(related[i].state, compact: true),
+                          showChevron: true,
+                          showDivider: i != related.length - 1,
+                          padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 9),
+                          onTap: () {
+                            Navigator.of(context).pop();
+                            state.selectPage('tasks');
+                          },
+                        ),
+                    ],
+                  ),
+          ),
+          const SizedBox(height: 14),
           Align(
             alignment: Alignment.centerLeft,
             child: OutlinedButton.icon(
-              onPressed: () => s.selectPage('tasks'),
-              icon: const Icon(Icons.arrow_forward, size: 13),
+              onPressed: () {
+                Navigator.of(context).pop();
+                state.selectPage('tasks');
+              },
+              icon: const Icon(Icons.arrow_forward_rounded, size: 15),
               label: const Text('前往任务中心'),
             ),
           ),
@@ -196,133 +333,207 @@ class _IncidentsPageState extends State<IncidentsPage> {
   }
 }
 
-CareTask? _taskFor(AppState s, String incidentId) {
-  for (final t in s.tasks) {
-    if (t.incidentId == incidentId) return t;
-  }
-  return null;
-}
-
-class _IncidentRow extends StatelessWidget {
+/// 事件卡片：左侧等级色条 + 依据摘要 + 处置进度。
+class _IncidentCard extends StatelessWidget {
   final Incident incident;
   final CareTask? task;
-  final VoidCallback onTap;
+  final VoidCallback onOpen;
   final VoidCallback onTask;
 
-  const _IncidentRow({required this.incident, required this.task, required this.onTap, required this.onTask});
+  const _IncidentCard({
+    required this.incident,
+    required this.task,
+    required this.onOpen,
+    required this.onTask,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      decoration: BoxDecoration(
-        color: LinanColors.surface,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: LinanColors.border),
-      ),
+    final style = LevelStyle.of(incident.level);
+    final bar = incident.open ? style.fg : LinanColors.green;
+    final emergency = incident.open && incident.level >= 3;
+    final evidence = incident.evidence.isEmpty ? '暂无补充依据' : incident.evidence.first;
+
+    return Material(
+      color: emergency ? LinanColors.tint(LinanColors.danger, .05) : LinanColors.surface,
+      borderRadius: BorderRadius.circular(LinanColors.rCard),
+      clipBehavior: Clip.antiAlias,
       child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(10),
+        onTap: onOpen,
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-          child: LayoutBuilder(
-            builder: (context, c) {
-              final wide = c.maxWidth >= 760;
-              final main = Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  SizedBox(
-                    width: wide ? 168 : 132,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+          padding: EdgeInsets.fromLTRB(14, 13, 14, 12),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 4,
+                height: 42,
+                margin: EdgeInsets.only(right: 11, top: 2),
+                decoration: BoxDecoration(
+                  color: bar,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
                       children: [
-                        Text(incident.elderName,
-                            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: LinanColors.text)),
-                        const SizedBox(height: 2),
-                        Text('${categoryLabel(incident.category)} · #${incident.id}',
-                            style: const TextStyle(fontSize: 9.5, color: LinanColors.faint)),
-                      ],
-                    ),
-                  ),
-                  LevelPill(incident.level),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(incident.title, style: const TextStyle(fontSize: 12, color: LinanColors.text, fontWeight: FontWeight.w500)),
-                        const SizedBox(height: 3),
+                        Flexible(
+                          child: Text(
+                            incident.elderName,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 13.5,
+                              fontWeight: FontWeight.w600,
+                              color: LinanColors.text,
+                              height: 1.3,
+                            ),
+                          ),
+                        ),
+                        SizedBox(width: 7),
+                        Expanded(
+                          child: Text(
+                            '${categoryLabel(incident.category)} · #${incident.id}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(fontSize: 11.5, color: LinanColors.faint),
+                          ),
+                        ),
+                        SizedBox(width: 8),
                         Text(
-                          incident.evidence.isEmpty ? '暂无补充依据' : incident.evidence.first,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontSize: 10, color: LinanColors.muted),
+                          formatStamp(incident.updated),
+                          style: TextStyle(fontSize: 11, color: LinanColors.faint),
                         ),
                       ],
                     ),
-                  ),
-                  const SizedBox(width: 10),
-                  if (task != null)
-                    _taskBadge(task!)
-                  else
-                    const Tag('无任务'),
-                  const SizedBox(width: 10),
-                  Tag(incident.open ? '未关闭' : '已关闭',
-                      color: incident.open ? LinanColors.amber : LinanColors.green),
-                  const SizedBox(width: 10),
-                  SizedBox(
-                    width: 76,
-                    child: Text(formatStamp(incident.updated),
-                        textAlign: TextAlign.right, style: const TextStyle(fontSize: 9.5, color: LinanColors.faint)),
-                  ),
-                  const SizedBox(width: 6),
-                  const Icon(Icons.chevron_right, size: 15, color: LinanColors.border),
-                ],
-              );
-              if (wide) return main;
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  main,
-                  if (task != null)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 8),
-                      child: GestureDetector(
-                        onTap: onTask,
-                        child: _taskBadge(task!, detailed: true),
+                    SizedBox(height: 4),
+                    Text(
+                      incident.title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                        color: LinanColors.text,
+                        height: 1.4,
                       ),
                     ),
-                ],
-              );
-            },
+                    SizedBox(height: 3),
+                    Text(
+                      evidence,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontSize: 11.5, color: LinanColors.muted, height: 1.5),
+                    ),
+                    SizedBox(height: 9),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Wrap(
+                            spacing: 6,
+                            runSpacing: 6,
+                            crossAxisAlignment: WrapCrossAlignment.center,
+                            children: [
+                              LevelPill(incident.level, compact: true),
+                              if (task != null)
+                                _TaskPill(task: task!, onTap: onTask)
+                              else
+                                const Tag('无任务'),
+                              Tag(
+                                incident.open ? '未关闭' : '已关闭',
+                                color: incident.open ? LinanColors.amber : LinanColors.green,
+                              ),
+                            ],
+                          ),
+                        ),
+                        SizedBox(width: 6),
+                        Icon(Icons.chevron_right_rounded, size: 18, color: LinanColors.faint),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
         ),
       ),
     );
   }
+}
 
-  Widget _taskBadge(CareTask t, {bool detailed = false}) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-      decoration: BoxDecoration(
-        color: LinanColors.surfaceAlt,
-        borderRadius: BorderRadius.circular(5),
-      ),
-      child: Text(
-        '任务 #${t.id} · ${stateName(t.state)}${detailed ? ' · ${skillName(t.requiredSkill)}' : ''}',
-        style: const TextStyle(fontSize: 9, color: LinanColors.muted),
+/// 事件卡片上的任务胶囊，点击直达任务中心。
+class _TaskPill extends StatelessWidget {
+  final CareTask task;
+  final VoidCallback onTap;
+
+  const _TaskPill({required this.task, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: LinanColors.tint(LinanColors.primary, .1),
+      borderRadius: BorderRadius.circular(LinanColors.rPill),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(LinanColors.rPill),
+        child: Padding(
+          padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.assignment_outlined, size: 11, color: LinanColors.primary),
+              const SizedBox(width: 4),
+              Text(
+                '任务 #${task.id} · ${stateName(task.state)}',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w500,
+                  color: LinanColors.primary,
+                  height: 1.2,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
 }
 
-class _MiniTitle extends StatelessWidget {
-  final String text;
-  const _MiniTitle(this.text);
+class _BulletList extends StatelessWidget {
+  final List<String> lines;
+
+  const _BulletList(this.lines);
 
   @override
-  Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.only(bottom: 7),
-        child: Text(text, style: const TextStyle(fontSize: 9.5, letterSpacing: .8, color: LinanColors.faint)),
-      );
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (final line in lines)
+          Padding(
+            padding: EdgeInsets.only(bottom: 7),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  padding: EdgeInsets.only(top: 6),
+                  child: Dot(LinanColors.amber, size: 5),
+                ),
+                SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    line,
+                    style: TextStyle(fontSize: 12, height: 1.6, color: LinanColors.text),
+                  ),
+                ),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
 }

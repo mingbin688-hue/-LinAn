@@ -41,6 +41,16 @@ class _WorkflowsPageState extends State<WorkflowsPage> {
     ),
   ];
 
+  static const List<String> _statusOptions = [
+    'all',
+    'queued',
+    'running',
+    'waiting_human',
+    'completed',
+    'failed',
+    'cancelled',
+  ];
+
   @override
   Widget build(BuildContext context) {
     final kinds = <String, String>{'all': '全部类型', ...runKindNames};
@@ -50,149 +60,190 @@ class _WorkflowsPageState extends State<WorkflowsPage> {
       return true;
     }).toList();
 
-    return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(24, 18, 24, 28),
-      child: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 1240),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              SectionCard(
-                padding: const EdgeInsets.fromLTRB(18, 15, 18, 15),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 38,
-                      height: 38,
-                      decoration: BoxDecoration(color: LinanColors.primarySoft, borderRadius: BorderRadius.circular(10)),
-                      child: const Icon(Icons.account_tree_outlined, size: 19, color: LinanColors.primary),
-                    ),
-                    const SizedBox(width: 12),
-                    const Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('自动派单', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-                          SizedBox(height: 3),
-                          Text(
-                            '仅覆盖 1 级关注、且需要电话核实的待派任务；数据未知、优先与紧急任务仍由管理员确认。',
-                            style: TextStyle(fontSize: 10.5, height: 1.55, color: LinanColors.muted),
-                          ),
-                        ],
+    return LayoutBuilder(
+      builder: (context, c) {
+        final wide = c.maxWidth >= 980;
+        return SingleChildScrollView(
+          padding: EdgeInsets.fromLTRB(wide ? 24 : 16, 0, wide ? 24 : 16, 28),
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 1180),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  PageHeader(
+                    padding: const EdgeInsets.only(top: 26, bottom: 16),
+                    title: '工作流中心',
+                    subtitle: '风险响应、处置复核与对话查询的运行轨迹。',
+                    icon: Icons.account_tree_rounded,
+                    accent: LinanColors.indigo,
+                    actions: [
+                      Tag(
+                        s.workflowsLoading ? '同步中' : '可追溯',
+                        color: s.workflowsLoading ? LinanColors.amber : LinanColors.green,
+                        icon: s.workflowsLoading ? Icons.sync_rounded : Icons.verified_rounded,
                       ),
-                    ),
-                    Switch(
-                      value: s.autoDispatch,
-                      onChanged: (v) async {
-                        try {
-                          await s.setAutoDispatch(v);
-                        } on Object catch (e) {
-                          s.toast('$e');
-                        }
-                      },
-                    ),
-                    const SizedBox(width: 4),
-                    Text(s.autoDispatch ? '已开启' : '已关闭',
-                        style: TextStyle(
-                          fontSize: 10.5,
-                          color: s.autoDispatch ? LinanColors.primary : LinanColors.muted,
-                          fontWeight: FontWeight.w600,
-                        )),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 12),
-              LayoutBuilder(
-                builder: (context, c) {
-                  final cols = c.maxWidth >= 1000 ? 3 : 1;
-                  final gap = 12.0;
-                  final width = (c.maxWidth - gap * (cols - 1)) / cols;
-                  return Wrap(
-                    spacing: gap,
-                    runSpacing: gap,
-                    children: [
-                      for (final m in _maps) SizedBox(width: width, child: _MapCard(title: m.$1, note: m.$2, steps: m.$3)),
                     ],
-                  );
-                },
-              ),
-              const SizedBox(height: 12),
-              LayoutBuilder(
-                builder: (context, c) {
-                  final wide = c.maxWidth >= 900;
-                  final catalogue = _agentCatalogue();
-                  final mcpCard = _mcpCard();
-                  final runsPanel = _runsPanel(runs, kinds);
-                  final jobsPanel = _jobsPanel();
-                  final left = Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [catalogue, const SizedBox(height: 12), mcpCard],
-                  );
-                  final right = Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [runsPanel, const SizedBox(height: 12), jobsPanel],
-                  );
-                  if (wide) {
-                    return Row(
+                  ),
+                  _autoDispatchCard(),
+                  const SizedBox(height: 12),
+                  _flowMaps(),
+                  const SizedBox(height: 12),
+                  if (wide)
+                    Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        SizedBox(width: 330, child: left),
+                        SizedBox(
+                          width: 340,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              _agentCatalogue(),
+                              const SizedBox(height: 12),
+                              _mcpCard(),
+                            ],
+                          ),
+                        ),
                         const SizedBox(width: 12),
-                        Expanded(child: right),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              _runsPanel(runs, kinds),
+                              const SizedBox(height: 12),
+                              _jobsPanel(),
+                            ],
+                          ),
+                        ),
                       ],
-                    );
-                  }
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [left, const SizedBox(height: 12), right],
-                  );
-                },
+                    )
+                  else
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        _runsPanel(runs, kinds),
+                        const SizedBox(height: 12),
+                        _jobsPanel(),
+                        const SizedBox(height: 12),
+                        _agentCatalogue(),
+                        const SizedBox(height: 12),
+                        _mcpCard(),
+                      ],
+                    ),
+                ],
               ),
-            ],
+            ),
           ),
-        ),
+        );
+      },
+    );
+  }
+
+  Widget _autoDispatchCard() {
+    return SectionCard(
+      padding: EdgeInsets.fromLTRB(18, 15, 16, 15),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          IconTile(Icons.bolt_rounded, color: LinanColors.amber, size: 38, iconSize: 20),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('自动派单',
+                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: LinanColors.text)),
+                SizedBox(height: 3),
+                Text(
+                  '仅覆盖 1 级关注、且需要电话核实的待派任务；数据未知、优先与紧急任务仍由管理员确认。',
+                  style: TextStyle(fontSize: 11.5, height: 1.55, color: LinanColors.muted),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          Tag(
+            s.autoDispatch ? '已开启' : '已关闭',
+            color: s.autoDispatch ? LinanColors.green : LinanColors.muted,
+            icon: s.autoDispatch ? Icons.check_circle_outline : Icons.pause_circle_outline,
+          ),
+          const SizedBox(width: 8),
+          Switch(
+            value: s.autoDispatch,
+            onChanged: (v) async {
+              try {
+                await s.setAutoDispatch(v);
+              } on Object catch (e) {
+                s.toast('$e');
+              }
+            },
+          ),
+        ],
       ),
     );
   }
 
+  Widget _flowMaps() {
+    return LayoutBuilder(
+      builder: (context, c) {
+        final cols = c.maxWidth >= 1000 ? 3 : 1;
+        final gap = 12.0;
+        final width = (c.maxWidth - gap * (cols - 1)) / cols;
+        return Wrap(
+          spacing: gap,
+          runSpacing: gap,
+          children: [
+            for (final m in _maps) SizedBox(width: width, child: _MapCard(title: m.$1, note: m.$2, steps: m.$3)),
+          ],
+        );
+      },
+    );
+  }
+
   Widget _agentCatalogue() {
-    final agents = (s.agentsInfo['agents'] as List? ?? const []);
+    final agents = (s.agentsInfo['agents'] as List? ?? []);
     final mode = '${s.agentsInfo['mode'] ?? 'rules'}';
     return SectionCard(
       title: 'Agent 目录',
       subtitle: '业务 Agent 负责编排与解释；风险等级仍由规则与模型判断。',
+      icon: Icons.smart_toy_outlined,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Row(
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
             children: [
-              Tag(mode == 'llm' ? '模型模式' : '规则模式', color: LinanColors.primary, icon: Icons.memory),
-              const SizedBox(width: 6),
-              Tag('禁止自动升级', color: LinanColors.muted),
+              Tag(mode == 'llm' ? '模型模式' : '规则模式',
+                  color: LinanColors.primary, icon: Icons.memory_rounded),
+              Tag('禁止自动升级', color: LinanColors.muted, icon: Icons.lock_outline_rounded),
             ],
           ),
-          const SizedBox(height: 10),
+          SizedBox(height: 12),
           if (agents.isEmpty)
-            const Text('暂无 Agent 目录数据', style: TextStyle(fontSize: 10.5, color: LinanColors.faint))
+            EmptyHint('暂无 Agent 目录数据', icon: Icons.smart_toy_outlined)
           else
-            for (final a in agents.take(8))
+            for (var i = 0; i < agents.take(8).length; i++)
               Padding(
-                padding: const EdgeInsets.only(bottom: 8),
+                padding: EdgeInsets.only(bottom: i == agents.take(8).length - 1 ? 0 : 10),
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Padding(padding: EdgeInsets.only(top: 4), child: Dot(LinanColors.primary, size: 5)),
-                    const SizedBox(width: 7),
+                    Padding(padding: EdgeInsets.only(top: 5), child: Dot(LinanColors.primary, size: 6)),
+                    SizedBox(width: 9),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('${a['name'] ?? a['id'] ?? 'Agent'}',
-                              style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600)),
-                          if ('${a['description'] ?? a['role'] ?? ''}'.isNotEmpty)
-                            Text('${a['description'] ?? a['role']}',
-                                style: const TextStyle(fontSize: 9.5, height: 1.5, color: LinanColors.muted)),
+                          Text('${agents[i]['name'] ?? agents[i]['id'] ?? 'Agent'}',
+                              style: TextStyle(
+                                  fontSize: 12.5, fontWeight: FontWeight.w600, color: LinanColors.text)),
+                          if ('${agents[i]['description'] ?? agents[i]['role'] ?? ''}'.isNotEmpty)
+                            Padding(
+                              padding: EdgeInsets.only(top: 2),
+                              child: Text('${agents[i]['description'] ?? agents[i]['role']}',
+                                  style: TextStyle(fontSize: 11, height: 1.5, color: LinanColors.muted)),
+                            ),
                         ],
                       ),
                     ),
@@ -210,9 +261,10 @@ class _WorkflowsPageState extends State<WorkflowsPage> {
     return SectionCard(
       title: 'MCP 接入',
       subtitle: '模型客户端通过受限 MCP 接口访问记录；令牌由管理员签发。',
+      icon: Icons.cable_rounded,
       trailing: IconButton(
         onPressed: s.loadMcp,
-        icon: const Icon(Icons.refresh, size: 17),
+        icon: const Icon(Icons.refresh_rounded, size: 18),
         tooltip: '刷新 MCP 状态',
       ),
       child: Column(
@@ -220,15 +272,18 @@ class _WorkflowsPageState extends State<WorkflowsPage> {
         children: [
           if (mcp == null)
             s.workflowsLoading
-                ? const Padding(
+                ? Padding(
                     padding: EdgeInsets.symmetric(vertical: 18),
                     child: Center(child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))),
                   )
-                : const EmptyHint('尚未获取 MCP 状态', icon: Icons.cable_outlined)
+                : EmptyHint('尚未获取 MCP 状态', icon: Icons.cable_outlined)
           else ...[
             Container(
-              padding: const EdgeInsets.fromLTRB(10, 9, 10, 9),
-              decoration: BoxDecoration(color: LinanColors.surfaceAlt, borderRadius: BorderRadius.circular(8)),
+              padding: EdgeInsets.fromLTRB(12, 11, 12, 11),
+              decoration: BoxDecoration(
+                color: LinanColors.surfaceAlt,
+                borderRadius: BorderRadius.circular(LinanColors.rControl),
+              ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -237,42 +292,46 @@ class _WorkflowsPageState extends State<WorkflowsPage> {
                       Expanded(
                         child: Text(
                           mcp.endpoint.isEmpty ? '/mcp' : mcp.endpoint,
-                          style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, fontFamily: 'monospace'),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                              fontSize: 12.5, fontWeight: FontWeight.w600, fontFamily: 'Consolas'),
                         ),
                       ),
                       if (mcp.protocol.isNotEmpty) Tag('协议 ${mcp.protocol}', color: LinanColors.primary),
                     ],
                   ),
-                  const SizedBox(height: 5),
+                  SizedBox(height: 5),
                   Text(
                     '工具 ${mcp.tools} · 资源 ${mcp.resources} · 提示 ${mcp.prompts}',
-                    style: const TextStyle(fontSize: 9.5, color: LinanColors.muted),
+                    style: TextStyle(fontSize: 11, color: LinanColors.muted),
                   ),
                 ],
               ),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 10),
             Row(
               children: [
-                const Expanded(
-                  child: Text('访问令牌', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600)),
+                Expanded(
+                  child: Text('访问令牌',
+                      style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: LinanColors.text)),
                 ),
                 TextButton.icon(
                   onPressed: _createToken,
-                  icon: const Icon(Icons.add, size: 14),
-                  label: const Text('新建令牌', style: TextStyle(fontSize: 10)),
+                  icon: const Icon(Icons.add_rounded, size: 15),
+                  label: const Text('新建令牌'),
                   style: TextButton.styleFrom(
-                    minimumSize: const Size(0, 26),
-                    padding: const EdgeInsets.symmetric(horizontal: 6),
+                    minimumSize: const Size(0, 28),
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
                     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   ),
                 ),
               ],
             ),
             if (tokens.isEmpty)
-              const Padding(
+              Padding(
                 padding: EdgeInsets.only(top: 2, bottom: 2),
-                child: Text('还没有签发令牌', style: TextStyle(fontSize: 10, color: LinanColors.faint)),
+                child: Text('还没有签发令牌', style: TextStyle(fontSize: 11, color: LinanColors.faint)),
               )
             else
               for (final t in tokens) _tokenRow(t),
@@ -286,11 +345,11 @@ class _WorkflowsPageState extends State<WorkflowsPage> {
     final expired = token.expired;
     final status = token.revoked ? '已撤销' : (expired ? '已过期' : '');
     return Container(
-      margin: const EdgeInsets.only(top: 6),
-      padding: const EdgeInsets.fromLTRB(9, 8, 9, 8),
+      margin: EdgeInsets.only(top: 8),
+      padding: EdgeInsets.fromLTRB(11, 10, 11, 8),
       decoration: BoxDecoration(
-        color: LinanColors.surfaceAlt.withValues(alpha: .6),
-        borderRadius: BorderRadius.circular(8),
+        color: LinanColors.surfaceAlt.withValues(alpha: .7),
+        borderRadius: BorderRadius.circular(LinanColors.rControl),
         border: Border.all(color: LinanColors.borderSoft),
       ),
       child: Column(
@@ -303,22 +362,24 @@ class _WorkflowsPageState extends State<WorkflowsPage> {
                   token.label.isEmpty ? token.id : token.label,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+                  style: TextStyle(
+                      fontSize: 12, fontWeight: FontWeight.w600, color: LinanColors.text),
                 ),
               ),
               if (status.isNotEmpty)
-                Tag(status, color: token.revoked ? LinanColors.faint : LinanColors.danger,
-                    icon: token.revoked ? null : Icons.error_outline),
+                Tag(status,
+                    color: token.revoked ? LinanColors.faint : LinanColors.danger,
+                    icon: token.revoked ? null : Icons.error_outline_rounded),
             ],
           ),
-          const SizedBox(height: 3),
+          SizedBox(height: 4),
           Text(
             '${token.username.isEmpty ? '—' : token.username} · ${_tokenExpiry(token)}',
-            style: const TextStyle(fontSize: 9.5, color: LinanColors.muted),
+            style: TextStyle(fontSize: 11, color: LinanColors.muted),
           ),
           Text(
             '最后使用 ${formatStamp(token.lastUsed, empty: '未使用')}',
-            style: const TextStyle(fontSize: 9, color: LinanColors.faint),
+            style: TextStyle(fontSize: 11.5, color: LinanColors.faint),
           ),
           if (!token.revoked)
             Align(
@@ -327,11 +388,11 @@ class _WorkflowsPageState extends State<WorkflowsPage> {
                 onPressed: () => _revokeToken(token),
                 style: TextButton.styleFrom(
                   foregroundColor: LinanColors.danger,
-                  minimumSize: const Size(0, 24),
-                  padding: const EdgeInsets.symmetric(horizontal: 6),
+                  minimumSize: const Size(0, 26),
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
                   tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                 ),
-                child: const Text('撤销', style: TextStyle(fontSize: 10)),
+                child: const Text('撤销', style: TextStyle(fontSize: 11)),
               ),
             ),
         ],
@@ -344,6 +405,7 @@ class _WorkflowsPageState extends State<WorkflowsPage> {
     return SectionCard(
       title: '运行记录',
       subtitle: '每次风险响应、处置复核与对话查询都可追溯到节点。',
+      icon: Icons.route_rounded,
       trailing: IconButton(
         onPressed: () async {
           try {
@@ -352,7 +414,7 @@ class _WorkflowsPageState extends State<WorkflowsPage> {
             s.toast('$e');
           }
         },
-        icon: const Icon(Icons.refresh, size: 17),
+        icon: Icon(Icons.refresh_rounded, size: 18),
         tooltip: '刷新运行记录',
       ),
       child: Column(
@@ -360,56 +422,83 @@ class _WorkflowsPageState extends State<WorkflowsPage> {
         children: [
           if (stats != null)
             Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: Text(
-                '共 ${stats.runsTotal} 次运行 · 等待人工 ${stats.runsWaitingHuman} · 失败 ${stats.runsFailed}',
-                style: const TextStyle(fontSize: 9.5, color: LinanColors.faint),
+              padding: EdgeInsets.only(bottom: 10),
+              child: Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: [
+                  Tag('共 ${stats.runsTotal} 次运行', color: LinanColors.muted, icon: Icons.history_rounded),
+                  Tag('等待人工 ${stats.runsWaitingHuman}',
+                      color: stats.runsWaitingHuman > 0 ? LinanColors.amber : LinanColors.muted,
+                      icon: Icons.pan_tool_outlined),
+                  Tag('失败 ${stats.runsFailed}',
+                      color: stats.runsFailed > 0 ? LinanColors.danger : LinanColors.muted,
+                      icon: Icons.error_outline_rounded),
+                ],
               ),
             ),
-          Wrap(
-            spacing: 6,
-            runSpacing: 6,
+          SegmentedControl(
+            labels: [for (final e in kinds.entries) e.value],
+            selected: kinds.keys.toList().indexOf(_kind).clamp(0, kinds.length - 1),
+            onChanged: (i) => setState(() => _kind = kinds.keys.elementAt(i)),
+          ),
+          SizedBox(height: 8),
+          Row(
             children: [
-              for (final e in kinds.entries)
-                ChoiceChip(
-                  label: Text(e.value, style: const TextStyle(fontSize: 10)),
-                  selected: _kind == e.key,
-                  onSelected: (_) => setState(() => _kind = e.key),
-                  showCheckmark: false,
-                  visualDensity: VisualDensity.compact,
-                  selectedColor: LinanColors.primarySoft,
-                  backgroundColor: LinanColors.surfaceAlt,
-                  side: BorderSide.none,
+              Icon(Icons.filter_alt_outlined, size: 14, color: LinanColors.faint),
+              SizedBox(width: 6),
+              DropdownButtonHideUnderline(
+                child: DropdownButton<String>(
+                  value: _status,
+                  isDense: true,
+                  borderRadius: BorderRadius.circular(LinanColors.rControl),
+                  style: TextStyle(fontSize: 11.5, color: LinanColors.muted),
+                  items: [
+                    for (final status in _statusOptions)
+                      DropdownMenuItem(
+                        value: status,
+                        child: Text(status == 'all' ? '全部状态' : runStatusName(status),
+                            style: const TextStyle(fontSize: 11.5)),
+                      ),
+                  ],
+                  onChanged: (v) => setState(() => _status = v ?? 'all'),
                 ),
-              const SizedBox(width: 8),
-              DropdownButton<String>(
-                value: _status,
-                underline: const SizedBox.shrink(),
-                style: const TextStyle(fontSize: 10, color: LinanColors.muted),
-                items: [
-                  const DropdownMenuItem(value: 'all', child: Text('全部状态')),
-                  for (final status in const ['queued', 'running', 'waiting_human', 'completed', 'failed', 'cancelled'])
-                    DropdownMenuItem(value: status, child: Text(runStatusName(status))),
-                ],
-                onChanged: (v) => setState(() => _status = v ?? 'all'),
               ),
+              Spacer(),
+              Text('${runs.length} 条', style: TextStyle(fontSize: 11.5, color: LinanColors.faint)),
             ],
           ),
-          const SizedBox(height: 10),
+          SizedBox(height: 8),
           if (runs.isEmpty)
             s.workflowsLoading && s.runs.isEmpty
-                ? const Padding(
+                ? Padding(
                     padding: EdgeInsets.symmetric(vertical: 22),
-                    child: Center(child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))),
+                    child: Center(
+                        child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))),
                   )
-                : EmptyHint(s.runs.isEmpty ? '还没有运行记录' : '没有符合筛选条件的运行', icon: Icons.account_tree_outlined)
+                : EmptyHint(s.runs.isEmpty ? '还没有运行记录' : '没有符合筛选条件的运行',
+                    icon: Icons.account_tree_outlined)
           else ...[
-            for (final r in runs) _runRow(r),
+            Container(
+              decoration: BoxDecoration(
+                color: LinanColors.surfaceAlt.withValues(alpha: .45),
+                borderRadius: BorderRadius.circular(LinanColors.rControl),
+              ),
+              clipBehavior: Clip.antiAlias,
+              child: Column(
+                children: [
+                  for (var i = 0; i < runs.length; i++) ...[
+                    _runRow(runs[i]),
+                    if (i != runs.length - 1) const Divider(height: .6, indent: 52, endIndent: 10),
+                  ],
+                ],
+              ),
+            ),
             Padding(
-              padding: const EdgeInsets.only(top: 4),
+              padding: EdgeInsets.only(top: 8),
               child: Text(
                 '已展示全部 ${runs.length} 条；后端最多返回最近 200 条运行记录。',
-                style: const TextStyle(fontSize: 9, color: LinanColors.faint),
+                style: TextStyle(fontSize: 11.5, color: LinanColors.faint),
               ),
             ),
           ],
@@ -419,59 +508,67 @@ class _WorkflowsPageState extends State<WorkflowsPage> {
   }
 
   Widget _runRow(WorkflowRun r) {
-    return InkWell(
-      onTap: () => _openRun(r),
-      borderRadius: BorderRadius.circular(8),
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 7),
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
-        decoration: BoxDecoration(
-          color: LinanColors.surfaceAlt.withValues(alpha: .5),
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: Row(
-          children: [
-            Container(
-              width: 6,
-              height: 6,
-              decoration: BoxDecoration(color: _runStatusColor(r.status), shape: BoxShape.circle),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Text('${runKindName(r.kind)} #${r.id}',
-                          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600)),
-                      const SizedBox(width: 6),
-                      Tag(modeName(r.mode), color: LinanColors.primary),
-                      if (r.historical) ...[
-                        const SizedBox(width: 4),
-                        const Tag('历史快照', color: LinanColors.amber),
+    final kindIcon = r.kind == 'risk'
+        ? Icons.warning_amber_rounded
+        : r.kind == 'review'
+            ? Icons.fact_check_outlined
+            : Icons.chat_bubble_outline_rounded;
+    final color = _runStatusColor(r.status);
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () => _openRun(r),
+        child: Padding(
+          padding: EdgeInsets.fromLTRB(12, 10, 8, 10),
+          child: Row(
+            children: [
+              IconTile(kindIcon, color: color, size: 34, iconSize: 17),
+              SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text('${runKindName(r.kind)} #${r.id}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                  fontSize: 13, fontWeight: FontWeight.w600, color: LinanColors.text)),
+                        ),
+                        SizedBox(width: 6),
+                        Tag(modeName(r.mode), color: LinanColors.primary),
+                        if (r.historical) ...[
+                          SizedBox(width: 4),
+                          Tag('历史快照', color: LinanColors.amber),
+                        ],
                       ],
-                    ],
-                  ),
-                  if (r.summary.isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 2),
-                      child: Text(r.summary,
-                          maxLines: 1, overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontSize: 9.5, color: LinanColors.muted)),
                     ),
+                    if (r.summary.isNotEmpty)
+                      Padding(
+                        padding: EdgeInsets.only(top: 3),
+                        child: Text(r.summary,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(fontSize: 11, color: LinanColors.muted)),
+                      ),
+                  ],
+                ),
+              ),
+              SizedBox(width: 10),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  _RunStatusPill(r.status),
+                  SizedBox(height: 4),
+                  Text(formatStamp(r.created),
+                      style: TextStyle(fontSize: 11, color: LinanColors.faint)),
                 ],
               ),
-            ),
-            const SizedBox(width: 8),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Text(runStatusName(r.status), style: const TextStyle(fontSize: 9.5, color: LinanColors.muted)),
-                Text(formatStamp(r.created), style: const TextStyle(fontSize: 8.5, color: LinanColors.faint)),
-              ],
-            ),
-          ],
+              Icon(Icons.chevron_right_rounded, size: 19, color: LinanColors.faint),
+            ],
+          ),
         ),
       ),
     );
@@ -482,9 +579,10 @@ class _WorkflowsPageState extends State<WorkflowsPage> {
     return SectionCard(
       title: '持久化任务',
       subtitle: '解释生成任务先写入队列，再由调度器执行；失败与死信可以重试。',
+      icon: Icons.dns_outlined,
       trailing: IconButton(
         onPressed: s.loadJobs,
-        icon: const Icon(Icons.refresh, size: 17),
+        icon: Icon(Icons.refresh_rounded, size: 18),
         tooltip: '刷新持久化任务',
       ),
       child: Column(
@@ -495,29 +593,31 @@ class _WorkflowsPageState extends State<WorkflowsPage> {
               spacing: 6,
               runSpacing: 6,
               children: [
-                Tag('排队 ${stats.jobsQueued}', color: LinanColors.amber, icon: Icons.schedule),
-                Tag('执行中 ${stats.jobsRunning}', color: LinanColors.primary, icon: Icons.play_circle_outline),
-                Tag('已完成 ${stats.jobsDone}', color: LinanColors.green, icon: Icons.check_circle_outline),
-                Tag('失败 ${stats.jobsFailed}', color: LinanColors.danger, icon: Icons.error_outline),
-                Tag('死信 ${stats.jobsDead}', color: LinanColors.danger, icon: Icons.report_gmailerrorred_outlined),
-                Tag('最久排队 ${_secondsText(stats.oldestQueuedSeconds)}', color: LinanColors.warm, icon: Icons.timer_outlined),
+                Tag('排队 ${stats.jobsQueued}', color: LinanColors.amber, icon: Icons.schedule_rounded),
+                Tag('执行中 ${stats.jobsRunning}', color: LinanColors.primary, icon: Icons.play_circle_outline_rounded),
+                Tag('已完成 ${stats.jobsDone}', color: LinanColors.green, icon: Icons.check_circle_outline_rounded),
+                Tag('失败 ${stats.jobsFailed}', color: LinanColors.danger, icon: Icons.error_outline_rounded),
+                Tag('死信 ${stats.jobsDead}', color: LinanColors.danger, icon: Icons.report_gmailerrorred_rounded),
+                Tag('最久排队 ${_secondsText(stats.oldestQueuedSeconds)}',
+                    color: LinanColors.warm, icon: Icons.timer_outlined),
               ],
             ),
-          if (stats != null) const SizedBox(height: 10),
+          if (stats != null) SizedBox(height: 10),
           if (s.jobs.isEmpty)
             s.workflowsLoading
-                ? const Padding(
+                ? Padding(
                     padding: EdgeInsets.symmetric(vertical: 22),
-                    child: Center(child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))),
+                    child: Center(
+                        child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))),
                   )
-                : const EmptyHint('还没有持久化任务', icon: Icons.dns_outlined)
+                : EmptyHint('还没有持久化任务', icon: Icons.dns_outlined)
           else ...[
             for (final job in s.jobs) _jobRow(job),
             Padding(
-              padding: const EdgeInsets.only(top: 4),
+              padding: EdgeInsets.only(top: 4),
               child: Text(
                 '已展示全部 ${s.jobs.length} 条；后端最多返回最近 50 条持久化任务。',
-                style: const TextStyle(fontSize: 9, color: LinanColors.faint),
+                style: TextStyle(fontSize: 11.5, color: LinanColors.faint),
               ),
             ),
           ],
@@ -529,54 +629,64 @@ class _WorkflowsPageState extends State<WorkflowsPage> {
   Widget _jobRow(WorkflowJob job) {
     final color = _jobStateColor(job.state);
     return Container(
-      margin: const EdgeInsets.only(bottom: 7),
-      padding: const EdgeInsets.fromLTRB(10, 9, 10, 7),
+      margin: EdgeInsets.only(bottom: 8),
+      padding: EdgeInsets.fromLTRB(12, 10, 12, 8),
       decoration: BoxDecoration(
         color: LinanColors.surfaceAlt.withValues(alpha: .5),
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(LinanColors.rControl),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Dot(color, size: 6),
-              const SizedBox(width: 8),
+              Dot(color, size: 7),
+              SizedBox(width: 8),
               Expanded(
                 child: Text(
                   '${job.id} · ${jobKindLabel(job.kind)}',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+                  style: TextStyle(
+                      fontSize: 12.5, fontWeight: FontWeight.w600, color: LinanColors.text),
                 ),
               ),
-              const SizedBox(width: 6),
+              SizedBox(width: 6),
               Tag(jobStateLabel(job.state), color: color),
             ],
           ),
-          const SizedBox(height: 4),
+          SizedBox(height: 4),
           Row(
             children: [
-              Text('尝试 ${job.attempts}/${job.maxAttempts}', style: const TextStyle(fontSize: 9.5, color: LinanColors.muted)),
-              const SizedBox(width: 10),
-              Text('优先级 ${job.priority}', style: const TextStyle(fontSize: 9.5, color: LinanColors.faint)),
-              const Spacer(),
-              Text(formatStamp(job.created), style: const TextStyle(fontSize: 9.5, color: LinanColors.faint)),
+              Text('尝试 ${job.attempts}/${job.maxAttempts}',
+                  style: TextStyle(fontSize: 11, color: LinanColors.muted)),
+              SizedBox(width: 10),
+              Text('优先级 ${job.priority}', style: TextStyle(fontSize: 11, color: LinanColors.faint)),
+              Spacer(),
+              Text(formatStamp(job.created), style: TextStyle(fontSize: 11.5, color: LinanColors.faint)),
             ],
           ),
           if (job.key.isNotEmpty)
             Padding(
-              padding: const EdgeInsets.only(top: 2),
-              child: Text('关联 ${job.key}', style: const TextStyle(fontSize: 9, color: LinanColors.faint)),
+              padding: EdgeInsets.only(top: 2),
+              child: Text('关联 ${job.key}', style: TextStyle(fontSize: 11.5, color: LinanColors.faint)),
             ),
           if (job.lastError.isNotEmpty)
             Padding(
-              padding: const EdgeInsets.only(top: 4),
-              child: Text(
-                job.lastError,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontSize: 9.5, height: 1.5, color: LinanColors.danger),
+              padding: EdgeInsets.only(top: 5),
+              child: Container(
+                width: double.infinity,
+                padding: EdgeInsets.symmetric(horizontal: 9, vertical: 7),
+                decoration: BoxDecoration(
+                  color: LinanColors.tint(LinanColors.danger, .07),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  job.lastError,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 11.5, height: 1.5, color: LinanColors.danger),
+                ),
               ),
             ),
           if (job.retryable || job.cancellable)
@@ -589,21 +699,21 @@ class _WorkflowsPageState extends State<WorkflowsPage> {
                     TextButton(
                       onPressed: () => _cancelJob(job),
                       style: TextButton.styleFrom(
-                        minimumSize: const Size(0, 26),
-                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        minimumSize: const Size(0, 28),
+                        padding: const EdgeInsets.symmetric(horizontal: 9),
                         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                       ),
-                      child: const Text('取消', style: TextStyle(fontSize: 10)),
+                      child: const Text('取消', style: TextStyle(fontSize: 11)),
                     ),
                   if (job.retryable)
                     TextButton(
                       onPressed: () => _retryJob(job),
                       style: TextButton.styleFrom(
-                        minimumSize: const Size(0, 26),
-                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        minimumSize: const Size(0, 28),
+                        padding: const EdgeInsets.symmetric(horizontal: 9),
                         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                       ),
-                      child: const Text('重试', style: TextStyle(fontSize: 10)),
+                      child: const Text('重试', style: TextStyle(fontSize: 11)),
                     ),
                 ],
               ),
@@ -639,7 +749,7 @@ class _WorkflowsPageState extends State<WorkflowsPage> {
   }
 
   Future<void> _createToken() async {
-    final draft = await showDialog<_TokenDraft>(context: context, builder: (_) => const _NewTokenDialog());
+    final draft = await showDialog<_TokenDraft>(context: context, builder: (_) => _NewTokenDialog());
     if (draft == null || !mounted) return;
     try {
       final issued = await s.createMcpToken(label: draft.label, expiresHours: draft.hours);
@@ -654,11 +764,11 @@ class _WorkflowsPageState extends State<WorkflowsPage> {
     return showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Row(
+        title: Row(
           children: [
             Icon(Icons.vpn_key_outlined, size: 18, color: LinanColors.primary),
             SizedBox(width: 8),
-            Text('令牌已创建', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+            Text('令牌已创建', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
           ],
         ),
         content: SizedBox(
@@ -668,28 +778,28 @@ class _WorkflowsPageState extends State<WorkflowsPage> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Text('${issued.label} · ${issued.username}',
-                  style: const TextStyle(fontSize: 11, color: LinanColors.muted)),
-              const SizedBox(height: 8),
+                  style: TextStyle(fontSize: 12, color: LinanColors.muted)),
+              SizedBox(height: 8),
               Container(
-                padding: const EdgeInsets.all(10),
+                padding: EdgeInsets.all(12),
                 decoration: BoxDecoration(
                   color: LinanColors.surfaceAlt,
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(LinanColors.rControl),
                   border: Border.all(color: LinanColors.borderSoft),
                 ),
                 child: SelectableText(
                   issued.token,
-                  style: const TextStyle(fontSize: 10.5, fontFamily: 'monospace', height: 1.5),
+                  style: TextStyle(fontSize: 11.5, fontFamily: 'Consolas', height: 1.5),
                 ),
               ),
-              const SizedBox(height: 8),
-              const Text('明文只显示这一次，关闭后无法再次查看。',
-                  style: TextStyle(fontSize: 10, color: LinanColors.amber)),
+              SizedBox(height: 8),
+              Text('明文只显示这一次，关闭后无法再次查看。',
+                  style: TextStyle(fontSize: 11, color: LinanColors.amber)),
               if (issued.expires > 0)
                 Padding(
-                  padding: const EdgeInsets.only(top: 3),
+                  padding: EdgeInsets.only(top: 3),
                   child: Text('有效期至 ${formatStamp(issued.expires)}',
-                      style: const TextStyle(fontSize: 9.5, color: LinanColors.faint)),
+                      style: TextStyle(fontSize: 11.5, color: LinanColors.faint)),
                 ),
             ],
           ),
@@ -735,6 +845,41 @@ class _WorkflowsPageState extends State<WorkflowsPage> {
   }
 }
 
+/// 运行状态的 pill（运行状态与任务状态口径不同，单独取色）。
+class _RunStatusPill extends StatelessWidget {
+  final String status;
+  const _RunStatusPill(this.status);
+
+  static (Color, Color) _colorsFor(String status) {
+    switch (status) {
+      case 'queued':
+      case 'waiting_human':
+        return (LinanColors.stateAmberBg, LinanColors.stateAmberFg);
+      case 'running':
+        return (LinanColors.stateBlueBg, LinanColors.stateBlueFg);
+      case 'completed':
+        return (LinanColors.stateGreenBg, LinanColors.stateGreenFg);
+      case 'failed':
+        return (LinanColors.stateRedBg, LinanColors.stateRedFg);
+      default:
+        return (LinanColors.stateNeutralBg, LinanColors.stateNeutralFg);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = _colorsFor(status);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3.5),
+      decoration: BoxDecoration(color: colors.$1, borderRadius: BorderRadius.circular(LinanColors.rPill)),
+      child: Text(
+        runStatusName(status),
+        style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: colors.$2, height: 1.2),
+      ),
+    );
+  }
+}
+
 /// 运行详情侧栏：定义版本、失败/取消重试与节点时间线。
 class _RunDetail extends StatefulWidget {
   final AppState state;
@@ -757,12 +902,12 @@ class _RunDetailState extends State<_RunDetail> {
     _future = s.runDetail(widget.runId);
   }
 
-  Future<void> _retry(BuildContext dialogContext, String id) async {
+  Future<void> _retry(String id) async {
     setState(() => _retrying = true);
     try {
       await s.retryRun(id);
-      if (!mounted || !dialogContext.mounted) return;
-      Navigator.of(dialogContext).pop();
+      if (!mounted) return;
+      Navigator.of(context).pop();
     } on Object catch (_) {
       // 失败已由状态层 toast 提示。
     } finally {
@@ -776,59 +921,77 @@ class _RunDetailState extends State<_RunDetail> {
       future: _future,
       builder: (context, snap) {
         if (snap.connectionState != ConnectionState.done) {
-          return const Padding(
+          return Padding(
             padding: EdgeInsets.only(top: 40),
             child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
           );
         }
         if (snap.hasError) return EmptyHint('${snap.error}', icon: Icons.error_outline);
         final detail = snap.data;
-        if (detail == null) return const EmptyHint('没有运行详情');
+        if (detail == null) return EmptyHint('没有运行详情');
         final definition = detail.definition;
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            if (definition != null || detail.retryable)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    if (definition != null) ...[
-                      Tag('定义 v${definition.version}', color: LinanColors.primary, icon: Icons.schema_outlined),
-                      if (definition.title.isNotEmpty)
-                        Text(definition.title, style: const TextStyle(fontSize: 10.5, color: LinanColors.muted)),
-                    ],
-                    if (detail.retryable)
-                      FilledButton.icon(
-                        onPressed: _retrying ? null : () => _retry(context, detail.id),
-                        icon: _retrying
-                            ? const SizedBox(
-                                width: 13,
-                                height: 13,
-                                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                              )
-                            : const Icon(Icons.replay, size: 15),
-                        label: const Text('重试运行', style: TextStyle(fontSize: 11.5)),
-                        style: FilledButton.styleFrom(
-                          minimumSize: const Size(0, 32),
-                          padding: const EdgeInsets.symmetric(horizontal: 12),
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-            if (detail.summary.isNotEmpty)
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                _RunStatusPill(detail.status),
+                Tag(modeName(detail.mode), color: LinanColors.primary, icon: Icons.memory_rounded),
+                if (definition != null) ...[
+                  Tag('定义 v${definition.version}', color: LinanColors.indigo, icon: Icons.schema_outlined),
+                  if (definition.title.isNotEmpty)
+                    Text(definition.title, style: TextStyle(fontSize: 11.5, color: LinanColors.muted)),
+                ],
+                if (detail.retryable)
+                  FilledButton.icon(
+                    onPressed: _retrying ? null : () => _retry(detail.id),
+                    icon: _retrying
+                        ? const SizedBox(
+                            width: 13,
+                            height: 13,
+                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                          )
+                        : const Icon(Icons.replay_rounded, size: 15),
+                    label: const Text('重试运行', style: TextStyle(fontSize: 12)),
+                    style: FilledButton.styleFrom(
+                      minimumSize: const Size(0, 32),
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                    ),
+                  ),
+              ],
+            ),
+            if (detail.summary.isNotEmpty) ...[
+              SizedBox(height: 12),
               Container(
-                padding: const EdgeInsets.all(11),
-                decoration: BoxDecoration(color: LinanColors.surfaceAlt, borderRadius: BorderRadius.circular(8)),
-                child: Text(detail.summary, style: const TextStyle(fontSize: 11.5, height: 1.65)),
+                padding: EdgeInsets.fromLTRB(14, 12, 14, 12),
+                decoration: BoxDecoration(
+                  color: LinanColors.surface,
+                  borderRadius: BorderRadius.circular(LinanColors.rCard),
+                ),
+                child: Text(detail.summary, style: TextStyle(fontSize: 12.5, height: 1.65, color: LinanColors.text)),
               ),
+            ],
             const SizedBox(height: 12),
-            for (var i = 0; i < detail.nodes.length; i++) _node(detail.nodes[i], i == detail.nodes.length - 1),
-            if (detail.nodes.isEmpty) const EmptyHint('这条运行没有节点记录'),
+            SectionCard(
+              title: '步骤时间线',
+              icon: Icons.timeline_rounded,
+              child: detail.nodes.isEmpty
+                  ? const EmptyHint('这条运行没有节点记录')
+                  : Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        for (var i = 0; i < detail.nodes.length; i++)
+                          _node(detail.nodes[i], i == detail.nodes.length - 1),
+                      ],
+                    ),
+            ),
+            if (detail.nodes.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              _logCard(detail),
+            ],
           ],
         );
       },
@@ -852,26 +1015,23 @@ class _RunDetailState extends State<_RunDetail> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           SizedBox(
-            width: 22,
+            width: 20,
             child: Column(
               children: [
                 Container(
                   width: 9,
                   height: 9,
-                  margin: const EdgeInsets.only(top: 4),
+                  margin: const EdgeInsets.only(top: 5),
                   decoration: BoxDecoration(color: color, shape: BoxShape.circle),
                 ),
-                if (!last)
-                  Expanded(
-                    child: Container(width: 1.2, color: LinanColors.border),
-                  ),
+                if (!last) Expanded(child: Container(width: 1.2, color: LinanColors.border)),
               ],
             ),
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 9),
           Expanded(
             child: Padding(
-              padding: const EdgeInsets.only(bottom: 14),
+              padding: EdgeInsets.only(bottom: 14),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -879,65 +1039,80 @@ class _RunDetailState extends State<_RunDetail> {
                     children: [
                       Expanded(
                         child: Text(node.name.isEmpty ? (agentNames[node.agent] ?? node.agent) : node.name,
-                            style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600)),
+                            style: TextStyle(
+                                fontSize: 12.5, fontWeight: FontWeight.w600, color: LinanColors.text)),
                       ),
                       Tag(node.mode.isEmpty ? '规则' : modeName(node.mode), color: LinanColors.muted),
-                      const SizedBox(width: 5),
-                      Text('${node.elapsedMs} ms', style: const TextStyle(fontSize: 8.5, color: LinanColors.faint)),
+                      SizedBox(width: 6),
+                      Text('${node.elapsedMs} ms', style: TextStyle(fontSize: 11, color: LinanColors.faint)),
                     ],
                   ),
                   if (timeNote.isNotEmpty)
                     Padding(
-                      padding: const EdgeInsets.only(top: 2),
-                      child: Text(timeNote, style: const TextStyle(fontSize: 8.5, color: LinanColors.faint)),
+                      padding: EdgeInsets.only(top: 2),
+                      child: Text(timeNote, style: TextStyle(fontSize: 11, color: LinanColors.faint)),
                     ),
                   if (node.summary.isNotEmpty)
                     Padding(
-                      padding: const EdgeInsets.only(top: 3),
-                      child: Text(node.summary, style: const TextStyle(fontSize: 10.5, height: 1.55, color: LinanColors.muted)),
+                      padding: EdgeInsets.only(top: 4),
+                      child: Text(node.summary,
+                          style: TextStyle(fontSize: 11.5, height: 1.55, color: LinanColors.muted)),
                     ),
                   if (node.evidence.isNotEmpty)
                     Padding(
-                      padding: const EdgeInsets.only(top: 5),
+                      padding: EdgeInsets.only(top: 5),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           for (final e in node.evidence.take(4))
                             Padding(
-                              padding: const EdgeInsets.only(bottom: 2),
-                              child: Text('· $e', style: const TextStyle(fontSize: 9.5, height: 1.5, color: LinanColors.muted)),
+                              padding: EdgeInsets.only(bottom: 2),
+                              child: Text('· $e',
+                                  style: TextStyle(fontSize: 11, height: 1.5, color: LinanColors.muted)),
                             ),
                         ],
                       ),
                     ),
                   if (node.error.isNotEmpty)
                     Padding(
-                      padding: const EdgeInsets.only(top: 4),
-                      child: Text(node.error, style: const TextStyle(fontSize: 9.5, color: LinanColors.danger)),
+                      padding: EdgeInsets.only(top: 4),
+                      child: Text(node.error, style: TextStyle(fontSize: 11, color: LinanColors.danger)),
                     ),
                   if (node.input.isNotEmpty || node.output.isNotEmpty)
                     Padding(
-                      padding: const EdgeInsets.only(top: 4),
-                      child: ExpansionTile(
-                        tilePadding: EdgeInsets.zero,
-                        childrenPadding: EdgeInsets.zero,
-                        dense: true,
-                        title: const Text('节点数据', style: TextStyle(fontSize: 9.5, color: LinanColors.faint)),
-                        children: [
-                          Container(
-                            width: double.infinity,
-                            padding: const EdgeInsets.all(8),
-                            decoration: BoxDecoration(color: LinanColors.surfaceAlt, borderRadius: BorderRadius.circular(6)),
-                            child: SelectableText(
-                              const JsonEncoder.withIndent('  ').convert({
-                                'input': node.input,
-                                'output': node.output,
-                              }),
-                              style: const TextStyle(fontSize: 9, height: 1.5, fontFamily: 'monospace'),
+                      padding: const EdgeInsets.only(top: 2),
+                      child: Theme(
+                        data: Theme.of(context).copyWith(
+                          dividerColor: Colors.transparent,
+                          splashFactory: NoSplash.splashFactory,
+                        ),
+                        child: ExpansionTile(
+                          tilePadding: EdgeInsets.zero,
+                          childrenPadding: EdgeInsets.zero,
+                          dense: true,
+                          iconColor: LinanColors.muted,
+                          collapsedIconColor: LinanColors.faint,
+                          title: Text('节点数据',
+                              style: TextStyle(fontSize: 11.5, color: LinanColors.muted)),
+                          children: [
+                            Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.all(9),
+                              decoration: BoxDecoration(
+                                color: LinanColors.surfaceAlt,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: SelectableText(
+                                const JsonEncoder.withIndent('  ').convert({
+                                  'input': node.input,
+                                  'output': node.output,
+                                }),
+                                style: const TextStyle(fontSize: 11, height: 1.5, fontFamily: 'Consolas'),
+                              ),
                             ),
-                          ),
-                          const SizedBox(height: 6),
-                        ],
+                            const SizedBox(height: 6),
+                          ],
+                        ),
                       ),
                     ),
                 ],
@@ -945,6 +1120,48 @@ class _RunDetailState extends State<_RunDetail> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _logCard(WorkflowRun detail) {
+    final lines = <String>[
+      '# run ${detail.id} · ${runKindName(detail.kind)} · ${runStatusName(detail.status)}',
+      '# mode ${modeName(detail.mode)} · created ${formatStamp(detail.created)} · updated ${formatStamp(detail.updated)}',
+      for (final node in detail.nodes)
+        [
+          formatClock(node.started ?? detail.created),
+          node.status.padRight(12),
+          '${node.elapsedMs.toString().padLeft(5)} ms',
+          node.name.isEmpty ? (agentNames[node.agent] ?? node.agent) : node.name,
+        ].join('  '),
+      for (final node in detail.nodes)
+        if (node.error.isNotEmpty) '! ${node.name}: ${node.error}',
+    ];
+    final text = lines.join('\n');
+    return SectionCard(
+      title: '运行日志',
+      subtitle: '等宽字体展示本次运行的节点状态与错误。',
+      icon: Icons.terminal_rounded,
+      trailing: IconButton(
+        onPressed: () {
+          Clipboard.setData(ClipboardData(text: text));
+          s.toast('已复制运行日志');
+        },
+        icon: Icon(Icons.copy_all_outlined, size: 17),
+        tooltip: '复制日志',
+      ),
+      child: Container(
+        width: double.infinity,
+        padding: EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: LinanColors.surfaceAlt,
+          borderRadius: BorderRadius.circular(LinanColors.rControl),
+        ),
+        child: SelectableText(
+          text,
+          style: TextStyle(fontSize: 11.5, height: 1.65, fontFamily: 'Consolas', color: LinanColors.text),
+        ),
       ),
     );
   }
@@ -959,42 +1176,43 @@ class _MapCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SectionCard(
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+      padding: EdgeInsets.fromLTRB(18, 16, 18, 16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(title, style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
-          const SizedBox(height: 2),
-          Text(note, style: const TextStyle(fontSize: 9.5, height: 1.5, color: LinanColors.muted)),
-          const SizedBox(height: 10),
+          Text(title, style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600, color: LinanColors.text)),
+          SizedBox(height: 3),
+          Text(note, style: TextStyle(fontSize: 11, height: 1.5, color: LinanColors.muted)),
+          SizedBox(height: 12),
           for (var i = 0; i < steps.length; i++)
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  width: 16,
-                  height: 16,
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    color: i == steps.length - 1 ? LinanColors.primary : LinanColors.surfaceAlt,
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: Text('${i + 1}',
-                      style: TextStyle(fontSize: 8.5, color: i == steps.length - 1 ? Colors.white : LinanColors.muted)),
-                ),
-                const SizedBox(width: 7),
-                Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.only(top: 2),
-                    child: Text(steps[i], style: const TextStyle(fontSize: 10.5, height: 1.5)),
-                  ),
-                ),
-              ],
-            ),
-          if (steps.length > 1)
             Padding(
-              padding: const EdgeInsets.only(left: 7.5, top: 2, bottom: 2),
-              child: Container(width: 1, height: 2, color: LinanColors.border),
+              padding: EdgeInsets.only(bottom: i == steps.length - 1 ? 0 : 8),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: 18,
+                    height: 18,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: i == steps.length - 1 ? LinanColors.primary : LinanColors.surfaceAlt,
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text('${i + 1}',
+                        style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: i == steps.length - 1 ? Colors.white : LinanColors.muted)),
+                  ),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Padding(
+                      padding: EdgeInsets.only(top: 1),
+                      child: Text(steps[i], style: TextStyle(fontSize: 11.5, height: 1.5, color: LinanColors.text)),
+                    ),
+                  ),
+                ],
+              ),
             ),
         ],
       ),
@@ -1044,8 +1262,9 @@ class _NewTokenDialogState extends State<_NewTokenDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final selected = _presets.indexWhere((p) => p.$1 == _hours);
     return AlertDialog(
-      title: const Text('新建 MCP 令牌', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+      title: Text('新建 MCP 令牌', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
       content: SizedBox(
         width: 380,
         child: Column(
@@ -1056,37 +1275,25 @@ class _NewTokenDialogState extends State<_NewTokenDialog> {
               controller: _label,
               autofocus: true,
               onSubmitted: (_) => _submit(),
-              decoration: const InputDecoration(labelText: '令牌标签', hintText: '例如：桌面客户端'),
+              decoration: InputDecoration(labelText: '令牌标签', hintText: '例如：桌面客户端'),
             ),
             if (_error != null)
               Padding(
-                padding: const EdgeInsets.only(top: 6),
-                child: Text(_error!, style: const TextStyle(fontSize: 10, color: LinanColors.danger)),
+                padding: EdgeInsets.only(top: 6),
+                child: Text(_error!, style: TextStyle(fontSize: 11, color: LinanColors.danger)),
               ),
             const SizedBox(height: 14),
-            const Text('有效期', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600)),
+            const Text('有效期', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
             const SizedBox(height: 6),
-            Wrap(
-              spacing: 6,
-              runSpacing: 6,
-              children: [
-                for (final preset in _presets)
-                  ChoiceChip(
-                    label: Text(preset.$2, style: const TextStyle(fontSize: 10)),
-                    selected: _hours == preset.$1,
-                    onSelected: (_) => setState(() => _hours = preset.$1),
-                    showCheckmark: false,
-                    visualDensity: VisualDensity.compact,
-                    selectedColor: LinanColors.primarySoft,
-                    backgroundColor: LinanColors.surfaceAlt,
-                    side: BorderSide.none,
-                  ),
-              ],
+            SegmentedControl(
+              labels: [for (final preset in _presets) preset.$2],
+              selected: selected < 0 ? 1 : selected,
+              onChanged: (i) => setState(() => _hours = _presets[i].$1),
             ),
             const SizedBox(height: 12),
-            const Text(
+            Text(
               '明文 token 只在创建成功时显示一次；请立即复制并妥善保存。',
-              style: TextStyle(fontSize: 9.5, height: 1.6, color: LinanColors.faint),
+              style: TextStyle(fontSize: 11.5, height: 1.6, color: LinanColors.faint),
             ),
           ],
         ),

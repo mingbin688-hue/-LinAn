@@ -28,6 +28,7 @@ def main(argv=None):
     db.initialize()
     engine = Engine(db)
     provider = ModelProvider()
+    provider.load(db)
     assistant = Assistant(db, engine, provider)
     server = LinAnMcp(db, engine, assistant)
     with db.transaction(True) as c:

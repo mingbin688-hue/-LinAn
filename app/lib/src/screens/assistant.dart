@@ -139,209 +139,245 @@ class _AssistantPageState extends State<AssistantPage> {
     final configured = agents['configured'] == true;
     final fallback = '${agents['fallback_reason'] ?? ''}';
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Container(
-          padding: const EdgeInsets.fromLTRB(24, 14, 24, 12),
-          decoration: const BoxDecoration(
-            color: LinanColors.surface,
-            border: Border(bottom: BorderSide(color: LinanColors.border)),
-          ),
-          child: LayoutBuilder(
-            builder: (context, c) {
-              final intro = Row(
-                children: [
-                  Container(
-                    width: 34,
-                    height: 34,
-                    decoration: BoxDecoration(color: LinanColors.primarySoft, borderRadius: BorderRadius.circular(9)),
-                    child: const Icon(Icons.auto_awesome, size: 18, color: LinanColors.primary),
-                  ),
-                  const SizedBox(width: 10),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+    return LayoutBuilder(
+      builder: (context, c) {
+        final wide = c.maxWidth >= 900;
+        final pad = wide ? 24.0 : 16.0;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 1180),
+                child: PageHeader(
+                  padding: EdgeInsets.fromLTRB(pad, 26, pad, 16),
+                  title: '邻安助手',
+                  subtitle: '只解释证据与记录，不改变风险等级，也不越过你的权限。',
+                  icon: Icons.auto_awesome_rounded,
+                  accent: LinanColors.primary,
+                  actions: [
+                    Tag(
+                      configured ? modeName(mode) : '规则模式',
+                      color: configured ? LinanColors.primary : LinanColors.muted,
+                      icon: Icons.memory_rounded,
+                    ),
+                    OutlinedButton.icon(
+                      onPressed: () => setState(() {
+                        _messages.clear();
+                        _sessionId = null;
+                      }),
+                      icon: const Icon(Icons.add_comment_outlined, size: 15),
+                      label: const Text('新对话'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            Padding(
+              padding: EdgeInsets.fromLTRB(pad, 0, pad, 0),
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 1180),
+                  child: _scopeCard(fallback: fallback, configured: configured),
+                ),
+              ),
+            ),
+            const SizedBox(height: 10),
+            Expanded(
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 1180),
+                  child: _messages.isEmpty
+                      ? SingleChildScrollView(
+                          padding: EdgeInsets.fromLTRB(pad, 6, pad, 18),
+                          child: _emptyState(wide),
+                        )
+                      : ListView.builder(
+                          controller: _scroll,
+                          padding: EdgeInsets.fromLTRB(pad, 10, pad, 10),
+                          itemCount: _messages.length,
+                          itemBuilder: (context, i) => _bubble(_messages[i]),
+                        ),
+                ),
+              ),
+            ),
+            Container(
+              padding: EdgeInsets.fromLTRB(pad, 4, pad, 14),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [LinanColors.bg.withValues(alpha: 0), LinanColors.bg.withValues(alpha: .92)],
+                ),
+              ),
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 1180),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      Row(
-                        children: [
-                          const Text('邻安助手', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
-                          const SizedBox(width: 8),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: configured ? LinanColors.primarySoft : LinanColors.surfaceAlt,
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                            child: Text(
-                              configured ? modeName(mode) : '规则模式',
-                              style: TextStyle(
-                                fontSize: 9,
-                                color: configured ? LinanColors.primary : LinanColors.muted,
-                                fontWeight: FontWeight.w600,
-                              ),
+                      if (_messages.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: SingleChildScrollView(
+                            scrollDirection: Axis.horizontal,
+                            child: Row(
+                              children: [
+                                for (final q in _suggestions) ...[
+                                  _SuggestionPill(
+                                    text: q,
+                                    onTap: _sending ? null : () => _send(q),
+                                  ),
+                                  const SizedBox(width: 7),
+                                ],
+                              ],
                             ),
                           ),
-                        ],
-                      ),
-                      const SizedBox(height: 2),
-                      const Text('只解释证据与记录，不改变风险等级，也不越过你的权限。',
-                          style: TextStyle(fontSize: 10, color: LinanColors.muted)),
-                    ],
-                  ),
-                ],
-              );
-              final controls = Wrap(
-                spacing: 8,
-                runSpacing: 6,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                children: [
-                  _selector<int?>(
-                    width: 150,
-                    value: _elderId,
-                    hint: '关联老人（可选）',
-                    items: [
-                      const DropdownMenuItem<int?>(value: null, child: Text('不限定老人', style: TextStyle(fontSize: 10.5))),
-                      for (final e in s.elders)
-                        DropdownMenuItem<int?>(value: e.id, child: Text('${e.name} · ${e.building}', style: const TextStyle(fontSize: 10.5))),
-                    ],
-                    onChanged: (v) => setState(() => _elderId = v),
-                  ),
-                  if (!s.isCareSide)
-                    _selector<String?>(
-                      width: 150,
-                      value: _taskId,
-                      hint: '关联任务（可选）',
-                      items: [
-                        const DropdownMenuItem<String?>(value: null, child: Text('不限定任务', style: TextStyle(fontSize: 10.5))),
-                        for (final t in s.tasks.take(30))
-                          DropdownMenuItem<String?>(
-                              value: t.id,
-                              child: Text('#${t.id} ${t.elderName} · ${stateName(t.state)}',
-                                  style: const TextStyle(fontSize: 10.5))),
-                      ],
-                      onChanged: (v) => setState(() => _taskId = v),
-                    ),
-                  OutlinedButton.icon(
-                    onPressed: () => setState(() {
-                      _messages.clear();
-                      _sessionId = null;
-                    }),
-                    icon: const Icon(Icons.add_comment_outlined, size: 13),
-                    label: const Text('新对话', style: TextStyle(fontSize: 10.5)),
-                    style: OutlinedButton.styleFrom(minimumSize: const Size(0, 30), padding: const EdgeInsets.symmetric(horizontal: 10)),
-                  ),
-                ],
-              );
-              if (c.maxWidth >= 900) {
-                return Row(
-                  children: [
-                    Expanded(child: intro),
-                    const SizedBox(width: 12),
-                    controls,
-                  ],
-                );
-              }
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [intro, const SizedBox(height: 10), controls],
-              );
-            },
-          ),
-        ),
-        Expanded(
-          child: Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 880),
-              child: _messages.isEmpty
-                  ? SingleChildScrollView(
-                      padding: const EdgeInsets.fromLTRB(24, 26, 24, 20),
-                      child: _emptyState(),
-                    )
-                  : ListView.builder(
-                      controller: _scroll,
-                      padding: const EdgeInsets.fromLTRB(24, 20, 24, 12),
-                      itemCount: _messages.length,
-                      itemBuilder: (context, i) => _bubble(_messages[i]),
-                    ),
-            ),
-          ),
-        ),
-        if (fallback.isNotEmpty && configured)
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24),
-            child: Text('模型回退：$fallback', style: const TextStyle(fontSize: 9.5, color: LinanColors.amber)),
-          ),
-        Container(
-          padding: const EdgeInsets.fromLTRB(24, 8, 24, 16),
-          child: Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 880),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  if (_messages.isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 8),
-                      child: SingleChildScrollView(
-                        scrollDirection: Axis.horizontal,
+                        ),
+                      Container(
+                        padding: const EdgeInsets.fromLTRB(6, 6, 6, 6),
+                        decoration: BoxDecoration(
+                          color: LinanColors.surface,
+                          borderRadius: BorderRadius.circular(24),
+                          border: Border.all(color: LinanColors.borderSoft),
+                        ),
                         child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.end,
                           children: [
-                            for (final q in _suggestions) ...[
-                              ActionChip(
-                                label: Text(q, style: const TextStyle(fontSize: 10.5)),
-                                onPressed: _sending ? null : () => _send(q),
-                                visualDensity: VisualDensity.compact,
-                                side: const BorderSide(color: LinanColors.borderSoft),
+                            Expanded(
+                              child: TextField(
+                                controller: _input,
+                                minLines: 1,
+                                maxLines: 4,
+                                enabled: !_sending,
+                                textInputAction: TextInputAction.send,
+                                onSubmitted: (_) => _send(),
+                                style: const TextStyle(fontSize: 13.5, height: 1.45),
+                                decoration: const InputDecoration(
+                                  hintText: '问点具体的，比如“王桂兰最近怎么样？”',
+                                  filled: false,
+                                  isDense: true,
+                                  contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+                                  border: InputBorder.none,
+                                  enabledBorder: InputBorder.none,
+                                  focusedBorder: InputBorder.none,
+                                ),
                               ),
-                              const SizedBox(width: 6),
-                            ],
+                            ),
+                            const SizedBox(width: 2),
+                            SizedBox(
+                              width: 42,
+                              height: 42,
+                              child: Tooltip(
+                                message: '发送',
+                                child: FilledButton(
+                                  onPressed: _sending ? null : _send,
+                                  style: FilledButton.styleFrom(
+                                    padding: EdgeInsets.zero,
+                                    shape: const CircleBorder(),
+                                  ),
+                                  child: _sending
+                                      ? const SizedBox(
+                                          width: 16,
+                                          height: 16,
+                                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                                      : const Icon(Icons.arrow_upward_rounded, size: 20),
+                                ),
+                              ),
+                            ),
                           ],
                         ),
                       ),
-                    ),
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      Expanded(
-                        child: TextField(
-                          controller: _input,
-                          minLines: 1,
-                          maxLines: 4,
-                          enabled: !_sending,
-                          textInputAction: TextInputAction.send,
-                          onSubmitted: (_) => _send(),
-                          style: const TextStyle(fontSize: 12.5),
-                          decoration: InputDecoration(
-                            hintText: '问点具体的，比如“王桂兰最近怎么样？”',
-                            filled: true,
-                            fillColor: LinanColors.surface,
-                            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      SizedBox(
-                        height: 42,
-                        child: FilledButton(
-                          onPressed: _sending ? null : _send,
-                          child: _sending
-                              ? const SizedBox(
-                                  width: 16, height: 16,
-                                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                              : const Text('发送'),
-                        ),
+                      const SizedBox(height: 8),
+                      Text(
+                        '助手查询的是当前账号可见的记录；涉及处置的判断仍由人工确认。',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(fontSize: 11.5, color: LinanColors.faint),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 6),
-                  const Text('助手查询的是当前账号可见的记录；涉及处置的判断仍由人工确认。',
-                      style: TextStyle(fontSize: 9, color: LinanColors.faint)),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  /// 对话范围与运行状态：关联老人/任务、当前模式，以及（模型启用时的）回退原因。
+  Widget _scopeCard({required String fallback, required bool configured}) {
+    return SectionCard(
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              _selector<int?>(
+                width: 214,
+                value: _elderId,
+                hint: '关联老人（可选）',
+                icon: Icons.elderly_rounded,
+                items: [
+                  const DropdownMenuItem<int?>(value: null, child: Text('不限定老人', style: TextStyle(fontSize: 11.5))),
+                  for (final e in s.elders)
+                    DropdownMenuItem<int?>(
+                      value: e.id,
+                      child: Text('${e.name} · ${e.building}', style: const TextStyle(fontSize: 11.5)),
+                    ),
+                ],
+                onChanged: (v) => setState(() => _elderId = v),
+              ),
+              if (!s.isCareSide)
+                _selector<String?>(
+                  width: 214,
+                  value: _taskId,
+                  hint: '关联任务（可选）',
+                  icon: Icons.checklist_rounded,
+                  items: [
+                    DropdownMenuItem<String?>(value: null, child: Text('不限定任务', style: TextStyle(fontSize: 11.5))),
+                    for (final t in s.tasks.take(30))
+                      DropdownMenuItem<String?>(
+                        value: t.id,
+                        child: Text('#${t.id} ${t.elderName} · ${stateName(t.state)}',
+                            style: const TextStyle(fontSize: 11.5)),
+                      ),
+                  ],
+                  onChanged: (v) => setState(() => _taskId = v),
+                ),
+              Tag('只查询当前权限内的记录', color: LinanColors.muted, icon: Icons.verified_user_outlined),
+            ],
+          ),
+          if (fallback.isNotEmpty && configured) ...[
+            SizedBox(height: 8),
+            Container(
+              padding: EdgeInsets.symmetric(horizontal: 11, vertical: 8),
+              decoration: BoxDecoration(
+                color: LinanColors.tint(LinanColors.amber, .1),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(Icons.info_outline_rounded, size: 14, color: LinanColors.amber),
+                  SizedBox(width: 7),
+                  Expanded(
+                    child: Text(
+                      '模型回退：$fallback',
+                      style: TextStyle(fontSize: 11, height: 1.5, color: LinanColors.amber),
+                    ),
+                  ),
                 ],
               ),
             ),
-          ),
-        ),
-      ],
+          ],
+        ],
+      ),
     );
   }
 
@@ -351,168 +387,215 @@ class _AssistantPageState extends State<AssistantPage> {
     required String hint,
     required List<DropdownMenuItem<T>> items,
     required ValueChanged<T?> onChanged,
+    IconData? icon,
   }) {
     return Container(
       width: width,
-      height: 30,
-      padding: const EdgeInsets.symmetric(horizontal: 9),
+      height: 34,
+      padding: EdgeInsets.symmetric(horizontal: 10),
       decoration: BoxDecoration(
         color: LinanColors.surfaceAlt,
-        borderRadius: BorderRadius.circular(7),
-        border: Border.all(color: LinanColors.borderSoft),
+        borderRadius: BorderRadius.circular(LinanColors.rControl),
       ),
-      child: DropdownButtonHideUnderline(
-        child: DropdownButton<T>(
-          value: value,
-          isExpanded: true,
-          isDense: true,
-          hint: Text(hint, style: const TextStyle(fontSize: 10.5, color: LinanColors.faint)),
-          icon: const Icon(Icons.expand_more, size: 15, color: LinanColors.muted),
-          style: const TextStyle(fontSize: 10.5, color: LinanColors.text),
-          items: items,
-          onChanged: onChanged,
-        ),
+      child: Row(
+        children: [
+          if (icon != null) ...[
+            Icon(icon, size: 15, color: LinanColors.muted),
+            SizedBox(width: 6),
+          ],
+          Expanded(
+            child: DropdownButtonHideUnderline(
+              child: DropdownButton<T>(
+                value: value,
+                isExpanded: true,
+                isDense: true,
+                hint: Text(hint, style: TextStyle(fontSize: 11.5, color: LinanColors.faint)),
+                icon: Icon(Icons.expand_more_rounded, size: 17, color: LinanColors.muted),
+                style: TextStyle(fontSize: 11.5, color: LinanColors.text),
+                items: items,
+                onChanged: onChanged,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
 
-  Widget _emptyState() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        const SizedBox(height: 16),
-        Center(
-          child: Container(
-            width: 52,
-            height: 52,
-            decoration: BoxDecoration(color: LinanColors.primarySoft, borderRadius: BorderRadius.circular(14)),
-            child: const Icon(Icons.forum_outlined, size: 24, color: LinanColors.primary),
-          ),
+  Widget _emptyState(bool wide) {
+    final chips = <Widget>[
+      for (final q in _suggestions)
+        _StarterCard(
+          text: q,
+          onTap: _sending ? null : () => _send(q),
         ),
-        const SizedBox(height: 12),
-        const Center(
-          child: Text('可以试着这样问', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
-        ),
-        const SizedBox(height: 4),
-        const Center(
-          child: Text('助手会先按权限查询记录，再解释判断依据。',
-              style: TextStyle(fontSize: 10.5, color: LinanColors.muted)),
-        ),
-        const SizedBox(height: 18),
-        for (final q in _suggestions)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 8),
-            child: InkWell(
-              onTap: _sending ? null : () => _send(q),
-              borderRadius: BorderRadius.circular(9),
+    ];
+    return Center(
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxWidth: 760),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            SizedBox(height: 10),
+            Center(
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                width: 58,
+                height: 58,
+                alignment: Alignment.center,
                 decoration: BoxDecoration(
-                  color: LinanColors.surface,
-                  borderRadius: BorderRadius.circular(9),
-                  border: Border.all(color: LinanColors.border),
+                  color: LinanColors.tint(LinanColors.primary, .12),
+                  borderRadius: BorderRadius.circular(17),
                 ),
-                child: Row(
-                  children: [
-                    Expanded(child: Text(q, style: const TextStyle(fontSize: 12, color: LinanColors.text))),
-                    const Icon(Icons.north_east, size: 14, color: LinanColors.primary),
-                  ],
-                ),
+                child: Icon(Icons.forum_rounded, size: 27, color: LinanColors.primary),
               ),
             ),
-          ),
-        const SizedBox(height: 14),
-        Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: LinanColors.surfaceAlt,
-            borderRadius: BorderRadius.circular(9),
-          ),
-          child: const Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Icon(Icons.shield_outlined, size: 14, color: LinanColors.muted),
-              SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  '边界说明：助手不会修改风险等级、不会自动派单，也不会把未关闭的紧急事件说成“已解决”。',
-                  style: TextStyle(fontSize: 10, height: 1.6, color: LinanColors.muted),
-                ),
+            const SizedBox(height: 12),
+            const Center(
+              child: Text('可以试着这样问',
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700, letterSpacing: -.3)),
+            ),
+            const SizedBox(height: 4),
+            Center(
+              child: Text('助手会先按权限查询记录，再解释判断依据。',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 12.5, color: LinanColors.muted)),
+            ),
+            const SizedBox(height: 18),
+            if (wide) ...[
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(child: Column(children: chips.take(2).toList())),
+                  const SizedBox(width: 10),
+                  Expanded(child: Column(children: chips.skip(2).toList())),
+                ],
               ),
-            ],
-          ),
+            ] else
+              for (final chip in chips) ...[
+                chip,
+                const SizedBox(height: 8),
+              ],
+            const SizedBox(height: 14),
+            Container(
+              padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+              decoration: BoxDecoration(
+                color: LinanColors.surfaceAlt,
+                borderRadius: BorderRadius.circular(LinanColors.rControl),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(Icons.shield_outlined, size: 16, color: LinanColors.muted),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      '边界说明：助手不会修改风险等级、不会自动派单，也不会把未关闭的紧急事件说成“已解决”。',
+                      style: TextStyle(fontSize: 11.5, height: 1.6, color: LinanColors.muted),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
-      ],
+      ),
     );
   }
 
   Widget _bubble(_ChatBubble m) {
     final user = m.role == 'user';
+    final bubble = Container(
+      padding: const EdgeInsets.fromLTRB(15, 11, 15, 12),
+      decoration: BoxDecoration(
+        color: user
+            ? LinanColors.primary
+            : (m.error ? LinanColors.tint(LinanColors.danger, .06) : LinanColors.surface),
+        borderRadius: BorderRadius.only(
+          topLeft: const Radius.circular(18),
+          topRight: const Radius.circular(18),
+          bottomLeft: Radius.circular(user ? 18 : 6),
+          bottomRight: Radius.circular(user ? 6 : 18),
+        ),
+        border: user
+            ? null
+            : Border.all(color: m.error ? LinanColors.tint(LinanColors.danger, .25) : LinanColors.borderSoft),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SelectableText(
+            m.text,
+            style: TextStyle(
+              fontSize: 13.5,
+              height: 1.7,
+              color: user ? Colors.white : (m.error ? LinanColors.danger : LinanColors.text),
+            ),
+          ),
+          if (!user && m.citations.isNotEmpty) ...[
+            SizedBox(height: 10),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                for (final c in m.citations) _citationChip(c),
+              ],
+            ),
+          ],
+          if (!user && m.context != null) _contextPanel(m.context!, m.citations.length),
+          if (!user && m.mode.isNotEmpty)
+            Padding(
+              padding: EdgeInsets.only(top: 7),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    m.mode == 'llm' ? Icons.auto_awesome : Icons.rule,
+                    size: 11,
+                    color: LinanColors.faint,
+                  ),
+                  SizedBox(width: 4),
+                  Text(
+                    m.mode == 'llm' ? '由模型解释 · 规则判定等级' : '规则模式回答',
+                    style: TextStyle(fontSize: 11, color: LinanColors.faint),
+                  ),
+                ],
+              ),
+            ),
+          if (!user && m.fallbackReason.isNotEmpty)
+            Padding(
+              padding: EdgeInsets.only(top: 4),
+              child: Text('回退原因：${m.fallbackReason}',
+                  style: TextStyle(fontSize: 11, color: LinanColors.amber)),
+            ),
+        ],
+      ),
+    );
+
     return Padding(
-      padding: const EdgeInsets.only(bottom: 14),
+      padding: EdgeInsets.only(bottom: 14),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisAlignment: user ? MainAxisAlignment.end : MainAxisAlignment.start,
         children: [
           if (!user) ...[
             Container(
-              width: 26,
-              height: 26,
-              decoration: BoxDecoration(color: LinanColors.primarySoft, borderRadius: BorderRadius.circular(7)),
-              child: const Icon(Icons.auto_awesome, size: 13, color: LinanColors.primary),
+              width: 30,
+              height: 30,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: LinanColors.tint(LinanColors.primary, .12),
+                borderRadius: BorderRadius.circular(9),
+              ),
+              child: Icon(Icons.auto_awesome, size: 15, color: LinanColors.primary),
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: 9),
           ],
           Flexible(
-            child: Container(
-              padding: const EdgeInsets.fromLTRB(13, 10, 13, 11),
-              decoration: BoxDecoration(
-                color: user
-                    ? LinanColors.primary
-                    : (m.error ? LinanColors.danger.withValues(alpha: .06) : LinanColors.surface),
-                borderRadius: BorderRadius.only(
-                  topLeft: Radius.circular(user ? 12 : 4),
-                  topRight: Radius.circular(user ? 4 : 12),
-                  bottomLeft: const Radius.circular(12),
-                  bottomRight: const Radius.circular(12),
-                ),
-                border: user ? null : Border.all(color: m.error ? LinanColors.danger.withValues(alpha: .25) : LinanColors.border),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  SelectableText(
-                    m.text,
-                    style: TextStyle(
-                      fontSize: 12.5,
-                      height: 1.75,
-                      color: user ? Colors.white : (m.error ? LinanColors.danger : LinanColors.text),
-                    ),
-                  ),
-                  if (!user && m.citations.isNotEmpty) ...[
-                    const SizedBox(height: 9),
-                    Wrap(
-                      spacing: 6,
-                      runSpacing: 6,
-                      children: [
-                        for (final c in m.citations) _citationChip(c),
-                      ],
-                    ),
-                  ],
-                  if (!user && m.context != null) _contextPanel(m.context!, m.citations.length),
-                  if (!user && m.mode.isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 6),
-                      child: Text(
-                        m.mode == 'llm' ? '由模型解释 · 规则判定等级' : '规则模式回答',
-                        style: const TextStyle(fontSize: 8.5, color: LinanColors.faint),
-                      ),
-                    ),
-                ],
-              ),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(maxWidth: 680),
+              child: bubble,
             ),
           ),
-          if (user) const SizedBox(width: 34),
         ],
       ),
     );
@@ -521,7 +604,7 @@ class _AssistantPageState extends State<AssistantPage> {
   /// 回复下方的上下文摘要：chars/budget、引用数、脱敏数与截断提示，可展开看明细。
   Widget _contextPanel(ContextSummary c, int citationCount) {
     return Padding(
-      padding: const EdgeInsets.only(top: 9),
+      padding: EdgeInsets.only(top: 10),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -534,84 +617,89 @@ class _AssistantPageState extends State<AssistantPage> {
                 color: LinanColors.primary,
                 icon: Icons.description_outlined,
               ),
-              Tag('引用 $citationCount', color: LinanColors.muted, icon: Icons.link),
+              Tag('引用 $citationCount', color: LinanColors.muted, icon: Icons.link_rounded),
               Tag(
                 '脱敏 ${c.redactions}',
                 color: c.redactions > 0 ? LinanColors.warm : LinanColors.muted,
                 icon: Icons.visibility_off_outlined,
               ),
-              if (c.truncated) const Tag('已截断', color: LinanColors.amber, icon: Icons.content_cut),
+              if (c.truncated) Tag('已截断', color: LinanColors.amber, icon: Icons.content_cut_rounded),
             ],
           ),
           if (c.hasDetails)
             Theme(
-              data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+              data: Theme.of(context).copyWith(dividerColor: Colors.transparent, splashFactory: NoSplash.splashFactory),
               child: ExpansionTile(
                 tilePadding: EdgeInsets.zero,
-                childrenPadding: const EdgeInsets.only(bottom: 2),
+                childrenPadding: EdgeInsets.only(bottom: 2),
                 dense: true,
                 visualDensity: VisualDensity.compact,
-                title: const Text('上下文明细', style: TextStyle(fontSize: 9.5, color: LinanColors.faint)),
+                iconColor: LinanColors.muted,
+                collapsedIconColor: LinanColors.faint,
+                title: Text('上下文明细', style: TextStyle(fontSize: 11, color: LinanColors.muted)),
                 children: [
                   Container(
                     width: double.infinity,
-                    padding: const EdgeInsets.fromLTRB(9, 8, 9, 8),
-                    decoration: BoxDecoration(color: LinanColors.surfaceAlt, borderRadius: BorderRadius.circular(7)),
+                    padding: EdgeInsets.fromLTRB(11, 10, 11, 10),
+                    decoration: BoxDecoration(
+                      color: LinanColors.surfaceAlt,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         if (c.sections.isNotEmpty) ...[
-                          const Text('上下文分区',
-                              style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.w600, color: LinanColors.muted)),
-                          const SizedBox(height: 4),
+                          Text('上下文分区',
+                              style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: LinanColors.muted)),
+                          SizedBox(height: 4),
                           for (final section in c.sections)
                             Padding(
-                              padding: const EdgeInsets.only(bottom: 2),
+                              padding: EdgeInsets.only(bottom: 2),
                               child: Text(
                                 '· ${section.title.isEmpty ? section.key : section.title}'
                                 '　${section.records} 条 · ${section.chars} 字符',
-                                style: const TextStyle(fontSize: 9.5, height: 1.5, color: LinanColors.muted),
+                                style: TextStyle(fontSize: 11.5, height: 1.5, color: LinanColors.muted),
                               ),
                             ),
                         ],
                         if (c.gaps.isNotEmpty) ...[
-                          const SizedBox(height: 6),
-                          const Text('数据缺口（未知，不推断安全）',
-                              style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.w600, color: LinanColors.amber)),
-                          const SizedBox(height: 3),
+                          SizedBox(height: 6),
+                          Text('数据缺口（未知，不推断安全）',
+                              style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: LinanColors.amber)),
+                          SizedBox(height: 3),
                           for (final gap in c.gaps)
                             Padding(
-                              padding: const EdgeInsets.only(bottom: 2),
+                              padding: EdgeInsets.only(bottom: 2),
                               child: Text('· $gap',
-                                  style: const TextStyle(fontSize: 9.5, height: 1.5, color: LinanColors.warm)),
+                                  style: TextStyle(fontSize: 11.5, height: 1.5, color: LinanColors.warm)),
                             ),
                         ],
                         if (c.redactionRules.isNotEmpty) ...[
-                          const SizedBox(height: 6),
+                          SizedBox(height: 6),
                           Text('脱敏规则（共 ${c.redactions} 处）',
-                              style: const TextStyle(fontSize: 9.5, fontWeight: FontWeight.w600, color: LinanColors.muted)),
-                          const SizedBox(height: 3),
+                              style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: LinanColors.muted)),
+                          SizedBox(height: 3),
                           for (final rule in c.redactionRules)
                             Padding(
-                              padding: const EdgeInsets.only(bottom: 2),
+                              padding: EdgeInsets.only(bottom: 2),
                               child: Text('· $rule',
-                                  style: const TextStyle(fontSize: 9.5, height: 1.5, color: LinanColors.muted)),
+                                  style: TextStyle(fontSize: 11.5, height: 1.5, color: LinanColors.muted)),
                             ),
                         ],
                         if (c.tools.isNotEmpty) ...[
-                          const SizedBox(height: 6),
-                          const Text('受限工具查询',
-                              style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.w600, color: LinanColors.muted)),
-                          const SizedBox(height: 3),
+                          SizedBox(height: 6),
+                          Text('受限工具查询',
+                              style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: LinanColors.muted)),
+                          SizedBox(height: 3),
                           for (final tool in c.tools)
                             Padding(
-                              padding: const EdgeInsets.only(bottom: 2),
+                              padding: EdgeInsets.only(bottom: 2),
                               child: Text(
                                 '· ${tool.query.isEmpty ? '记录查询' : tool.query}'
                                 '${tool.elderId == null ? '' : ' · 老人 #${tool.elderId}'}'
                                 '${tool.taskId == null ? '' : ' · 任务 ${tool.taskId}'}'
                                 '　${tool.records} 条',
-                                style: const TextStyle(fontSize: 9.5, height: 1.5, color: LinanColors.faint),
+                                style: TextStyle(fontSize: 11.5, height: 1.5, color: LinanColors.faint),
                               ),
                             ),
                         ],
@@ -629,35 +717,36 @@ class _AssistantPageState extends State<AssistantPage> {
   Widget _citationChip(Map<String, dynamic> c) {
     final type = '${c['type'] ?? c['kind'] ?? ''}';
     final label = '${c['label'] ?? c['title'] ?? c['name'] ?? c['summary'] ?? ''}';
-    if (label.isEmpty) return const SizedBox.shrink();
+    if (label.isEmpty) return SizedBox.shrink();
     final icon = type == 'task'
-        ? Icons.checklist
+        ? Icons.checklist_rounded
         : type == 'incident'
             ? Icons.report_outlined
             : type == 'workflow'
                 ? Icons.account_tree_outlined
-                : Icons.person_outline;
-    return InkWell(
-      onTap: () => _openCitation(c, type),
-      borderRadius: BorderRadius.circular(5),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-        decoration: BoxDecoration(
-          color: LinanColors.surfaceAlt,
-          borderRadius: BorderRadius.circular(5),
-          border: Border.all(color: LinanColors.borderSoft),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 11, color: LinanColors.primary),
-            const SizedBox(width: 4),
-            ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 220),
-              child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 9.5, color: LinanColors.primaryDeep)),
-            ),
-          ],
+                : Icons.person_outline_rounded;
+    return Material(
+      color: LinanColors.surfaceAlt,
+      borderRadius: BorderRadius.circular(LinanColors.rPill),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: () => _openCitation(c, type),
+        child: Padding(
+          padding: EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 12, color: LinanColors.primary),
+              SizedBox(width: 4),
+              ConstrainedBox(
+                constraints: BoxConstraints(maxWidth: 220),
+                child: Text(label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 11, color: LinanColors.primaryDeep, fontWeight: FontWeight.w500)),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -716,11 +805,11 @@ class _AssistantPageState extends State<AssistantPage> {
     showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('依据详情', style: TextStyle(fontSize: 15)),
+        title: const Text('依据详情', style: TextStyle(fontSize: 16)),
         content: SingleChildScrollView(
           child: Text(
             c.entries.map((e) => '${e.key}: ${e.value}').join('\n'),
-            style: const TextStyle(fontSize: 11, height: 1.7),
+            style: const TextStyle(fontSize: 12, height: 1.7),
           ),
         ),
         actions: [TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('知道了'))],
@@ -732,6 +821,64 @@ class _AssistantPageState extends State<AssistantPage> {
   void initState() {
     super.initState();
     if (!s.isCareSide && s.tasks.length == 1) _taskId = s.tasks.first.id;
+  }
+}
+
+/// 输入区上方的横向快捷问题胶囊。
+class _SuggestionPill extends StatelessWidget {
+  final String text;
+  final VoidCallback? onTap;
+  const _SuggestionPill({required this.text, this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: LinanColors.surface,
+      borderRadius: BorderRadius.circular(LinanColors.rPill),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Container(
+          padding: EdgeInsets.symmetric(horizontal: 13, vertical: 7),
+          decoration: BoxDecoration(
+            border: Border.all(color: LinanColors.borderSoft),
+            borderRadius: BorderRadius.circular(LinanColors.rPill),
+          ),
+          child: Text(text, style: TextStyle(fontSize: 11.5, color: LinanColors.text)),
+        ),
+      ),
+    );
+  }
+}
+
+/// 空状态里的提问入口卡片。
+class _StarterCard extends StatelessWidget {
+  final String text;
+  final VoidCallback? onTap;
+  const _StarterCard({required this.text, this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: LinanColors.surface,
+      borderRadius: BorderRadius.circular(LinanColors.rCard),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: EdgeInsets.fromLTRB(16, 14, 12, 14),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(text, style: TextStyle(fontSize: 12.5, color: LinanColors.text, height: 1.45)),
+              ),
+              SizedBox(width: 8),
+              Icon(Icons.north_east_rounded, size: 15, color: LinanColors.primary),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
 
@@ -775,7 +922,7 @@ class _CitationTaskBodyState extends State<_CitationTaskBody> {
       future: _future,
       builder: (context, snap) {
         if (snap.connectionState != ConnectionState.done) {
-          return const Padding(
+          return Padding(
             padding: EdgeInsets.only(top: 36),
             child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
           );
@@ -789,29 +936,34 @@ class _CitationTaskBodyState extends State<_CitationTaskBody> {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Row(
+            Wrap(
+              spacing: 8,
+              runSpacing: 6,
+              crossAxisAlignment: WrapCrossAlignment.center,
               children: [
                 LevelPill(t.level),
-                const SizedBox(width: 8),
                 StatePill(t.state),
-                if (t.requiredSkill.isNotEmpty) ...[
-                  const SizedBox(width: 8),
-                  Tag(skillName(t.requiredSkill)),
-                ],
-                const Spacer(),
-                if (t.overdue) const Tag('已超时', color: LinanColors.danger),
+                if (t.requiredSkill.isNotEmpty) Tag(skillName(t.requiredSkill), icon: Icons.handyman_outlined),
+                if (t.overdue) Tag('已超时', color: LinanColors.danger, icon: Icons.timer_off_outlined),
               ],
             ),
             const SizedBox(height: 12),
-            KeyValue('老人', '${t.elderName} · 档案 #${t.elderId}'),
-            KeyValue('任务', t.title),
-            KeyValue('负责人', t.staffName.isEmpty ? '待派单' : t.staffName),
-            KeyValue('截止', t.due == null ? '不设截止时间' : formatStamp(t.due)),
-            KeyValue('建议', t.advice.isEmpty ? '暂无建议' : t.advice),
+            SectionCard(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+              child: Column(
+                children: [
+                  KeyValue('老人', '${t.elderName} · 档案 #${t.elderId}'),
+                  KeyValue('任务', t.title),
+                  KeyValue('负责人', t.staffName.isEmpty ? '待派单' : t.staffName),
+                  KeyValue('截止', t.due == null ? '不设截止时间' : formatStamp(t.due)),
+                  KeyValue('建议', t.advice.isEmpty ? '暂无建议' : t.advice),
+                ],
+              ),
+            ),
             const SizedBox(height: 10),
-            const Text(
+            Text(
               '可前往「任务中心」按权限跟进或提交处置结果。',
-              style: TextStyle(fontSize: 10, height: 1.6, color: LinanColors.faint),
+              style: TextStyle(fontSize: 11, height: 1.6, color: LinanColors.faint),
             ),
           ],
         );
@@ -845,7 +997,7 @@ class _CitationElderBodyState extends State<_CitationElderBody> {
       future: _future,
       builder: (context, snap) {
         if (snap.connectionState != ConnectionState.done) {
-          return const Padding(
+          return Padding(
             padding: EdgeInsets.only(top: 36),
             child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
           );
@@ -858,23 +1010,32 @@ class _CitationElderBodyState extends State<_CitationElderBody> {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Row(
+            Wrap(
+              spacing: 8,
+              runSpacing: 6,
+              crossAxisAlignment: WrapCrossAlignment.center,
               children: [
                 LevelPill(e.level),
-                const SizedBox(width: 8),
-                if (e.dataUnknown) const Tag('数据缺失 = 未知', color: LinanColors.warm),
+                if (e.dataUnknown) Tag('数据缺失 = 未知', color: LinanColors.warm),
               ],
             ),
             const SizedBox(height: 12),
-            KeyValue('姓名', e.name),
-            KeyValue('年龄 / 楼栋', '${e.age} 岁 · ${e.building}'),
-            KeyValue('数据来源', e.origin),
-            KeyValue('历史基线', '${e.historyDays} 天 · ${e.baselineReady ? '可用于个性化判断' : '学习中，暂不生成成熟基线'}'),
-            KeyValue('未关闭事件', '${e.incidentCount} 条'),
+            SectionCard(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+              child: Column(
+                children: [
+                  KeyValue('姓名', e.name),
+                  KeyValue('年龄 / 楼栋', '${e.age} 岁 · ${e.building}'),
+                  KeyValue('数据来源', e.origin),
+                  KeyValue('历史基线', '${e.historyDays} 天 · ${e.baselineReady ? '可用于个性化判断' : '学习中，暂不生成成熟基线'}'),
+                  KeyValue('未关闭事件', '${e.incidentCount} 条'),
+                ],
+              ),
+            ),
             const SizedBox(height: 10),
-            const Text(
+            Text(
               '可前往「老人档案」查看完整详情与最近上报。',
-              style: TextStyle(fontSize: 10, height: 1.6, color: LinanColors.faint),
+              style: TextStyle(fontSize: 11, height: 1.6, color: LinanColors.faint),
             ),
           ],
         );

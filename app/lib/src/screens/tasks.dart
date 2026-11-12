@@ -17,6 +17,7 @@ class TasksPage extends StatefulWidget {
 class _TasksPageState extends State<TasksPage> {
   String _filter = 'active';
   String _query = '';
+  final TextEditingController _search = TextEditingController();
 
   static const List<(String, String)> _filters = [
     ('active', '进行中'),
@@ -28,6 +29,12 @@ class _TasksPageState extends State<TasksPage> {
     ('closed', '已关闭'),
     ('all', '全部'),
   ];
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
 
   bool _matchFilter(CareTask t) {
     if (_filter == 'all') return true;
@@ -55,115 +62,123 @@ class _TasksPageState extends State<TasksPage> {
         if (a.overdue != b.overdue) return a.overdue ? -1 : 1;
         return b.updated.compareTo(a.updated);
       });
+    final active = s.tasks.where((t) => t.state != 'closed').length;
+    final review = s.tasks.where((t) => t.state == 'review').length;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Container(
-          padding: const EdgeInsets.fromLTRB(24, 12, 24, 12),
-          decoration: const BoxDecoration(
-            color: LinanColors.surface,
-            border: Border(bottom: BorderSide(color: LinanColors.border)),
-          ),
-          child: LayoutBuilder(
-            builder: (context, c) {
-              final filters = SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Row(
-                  children: [
-                    for (final f in _filters) ...[
-                      _filterChip(f.$1, f.$2, s),
-                      const SizedBox(width: 5),
-                    ],
-                  ],
-                ),
-              );
-              final right = Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  SizedBox(
-                    width: 170,
-                    height: 32,
-                    child: TextField(
-                      decoration: const InputDecoration(
-                        hintText: '搜索老人 / 任务 / 负责人',
-                        prefixIcon: Icon(Icons.search, size: 15),
-                        prefixIconConstraints: BoxConstraints(minWidth: 34),
-                        isDense: true,
-                        contentPadding: EdgeInsets.symmetric(vertical: 8, horizontal: 8),
-                      ),
-                      style: const TextStyle(fontSize: 11),
-                      onChanged: (v) => setState(() => _query = v),
-                    ),
+    return LayoutBuilder(
+      builder: (context, shell) {
+        // 宽屏把内容收进 1180 的中栏，窄屏保留 24 的边距。
+        final side = shell.maxWidth > 1228 ? (shell.maxWidth - 1180) / 2 : 24.0;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            PageHeader(
+              title: '处置任务',
+              subtitle: '共 ${s.tasks.length} 条任务 · 进行中 $active 条 · 待复核 $review 条',
+              icon: Icons.task_alt_rounded,
+              padding: EdgeInsets.fromLTRB(side, 22, side, 14),
+              actions: [
+                if (s.user?.isAdmin == true)
+                  FilledButton.icon(
+                    onPressed: s.busy ? null : () => _recommend(context, s),
+                    icon: const Icon(Icons.auto_awesome_rounded, size: 17),
+                    label: const Text('计算派单建议'),
                   ),
-                  if (s.user?.isAdmin == true) ...[
-                    const SizedBox(width: 8),
-                    FilledButton.icon(
-                      onPressed: s.busy ? null : () => _recommend(context, s),
-                      icon: const Icon(Icons.auto_awesome, size: 14),
-                      label: const Text('计算派单建议', style: TextStyle(fontSize: 11)),
-                      style: FilledButton.styleFrom(minimumSize: const Size(0, 32), padding: const EdgeInsets.symmetric(horizontal: 12)),
-                    ),
-                  ],
-                ],
-              );
-              if (c.maxWidth >= 860) {
-                return Row(children: [Expanded(child: filters), const SizedBox(width: 12), right]);
-              }
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  filters,
-                  const SizedBox(height: 10),
-                  Align(alignment: Alignment.centerLeft, child: right),
-                ],
-              );
-            },
-          ),
-        ),
-        Expanded(
-          child: rows.isEmpty
-              ? EmptyHint(
-                  s.tasks.isEmpty ? '当前没有处置任务' : '没有符合筛选条件的任务',
-                  icon: Icons.checklist_rtl,
-                )
-              : Scrollbar(
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.fromLTRB(24, 14, 24, 26),
-                    child: Center(
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 1240),
-                        child: Column(
-                          children: [
-                            for (final t in rows) _TaskCard(state: s, task: t),
-                          ],
-                        ),
+              ],
+            ),
+            Padding(
+              padding: EdgeInsets.fromLTRB(side, 0, side, 12),
+              child: _controls(s),
+            ),
+            Expanded(
+              child: rows.isEmpty
+                  ? EmptyHint(
+                      s.tasks.isEmpty ? '当前没有处置任务' : '没有符合筛选条件的任务',
+                      icon: Icons.checklist_rtl_rounded,
+                    )
+                  : ListView.builder(
+                      padding: EdgeInsets.fromLTRB(side, 2, side, 28),
+                      itemCount: rows.length,
+                      itemBuilder: (context, i) => _TaskCard(
+                        key: ValueKey(rows[i].id),
+                        state: s,
+                        task: rows[i],
                       ),
                     ),
-                  ),
-                ),
-        ),
-      ],
+            ),
+          ],
+        );
+      },
     );
   }
 
-  Widget _filterChip(String key, String label, AppState s) {
-    final count = key == 'all'
-        ? s.tasks.length
-        : key == 'active'
-            ? s.tasks.where((t) => t.state != 'closed').length
-            : s.tasks.where((t) => t.state == key).length;
-    final selected = _filter == key;
-    return ChoiceChip(
-      label: Text('$label $count', style: TextStyle(fontSize: 10.5, color: selected ? LinanColors.primaryDeep : LinanColors.muted)),
-      selected: selected,
-      onSelected: (_) => setState(() => _filter = key),
-      showCheckmark: false,
-      visualDensity: VisualDensity.compact,
-      selectedColor: LinanColors.primarySoft,
-      backgroundColor: LinanColors.surfaceAlt,
-      side: BorderSide(color: selected ? LinanColors.primary.withValues(alpha: .35) : LinanColors.borderSoft),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+  /// 筛选 + 搜索：宽屏并排，窄屏上下堆叠。
+  Widget _controls(AppState s) {
+    final index = _filters.indexWhere((f) => f.$1 == _filter);
+    final segmented = SegmentedControl(
+      labels: [for (final f in _filters) f.$2],
+      selected: index < 0 ? 0 : index,
+      onChanged: (i) => setState(() => _filter = _filters[i].$1),
+    );
+    final search = Container(
+      height: 38,
+      padding: EdgeInsets.symmetric(horizontal: 10),
+      decoration: BoxDecoration(
+        color: LinanColors.fill,
+        borderRadius: BorderRadius.circular(LinanColors.rControl),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.search_rounded, size: 16, color: LinanColors.faint),
+          SizedBox(width: 6),
+          Expanded(
+            child: TextField(
+              controller: _search,
+              style: TextStyle(fontSize: 12.5, color: LinanColors.text),
+              cursorColor: LinanColors.primary,
+              decoration: InputDecoration(
+                hintText: '搜索老人、任务或负责人',
+                hintStyle: TextStyle(fontSize: 12.5, color: LinanColors.faint),
+                border: InputBorder.none,
+                enabledBorder: InputBorder.none,
+                focusedBorder: InputBorder.none,
+                isDense: true,
+                contentPadding: EdgeInsets.symmetric(vertical: 9),
+              ),
+              onChanged: (v) => setState(() => _query = v),
+            ),
+          ),
+          if (_query.isNotEmpty)
+            GestureDetector(
+              onTap: () {
+                _search.clear();
+                setState(() => _query = '');
+              },
+              child: Icon(Icons.cancel_outlined, size: 15, color: LinanColors.faint),
+            ),
+        ],
+      ),
+    );
+    return LayoutBuilder(
+      builder: (context, c) {
+        if (c.maxWidth >= 760) {
+          return Row(
+            children: [
+              Expanded(child: segmented),
+              const SizedBox(width: 12),
+              SizedBox(width: 250, child: search),
+            ],
+          );
+        }
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            segmented,
+            const SizedBox(height: 10),
+            search,
+          ],
+        );
+      },
     );
   }
 
@@ -171,9 +186,11 @@ class _TasksPageState extends State<TasksPage> {
     try {
       await s.loadRecommendations();
       if (!context.mounted) return;
-      await showDialog<void>(
-        context: context,
-        builder: (ctx) => _RecommendDialog(state: s),
+      await showSideSheet(
+        context,
+        title: '派单建议',
+        subtitle: '按优先级与人员容量计算，确认时会再次校验版本与技能。',
+        child: _RecommendDialog(state: s),
       );
     } catch (e) {
       s.toast('$e');
@@ -184,7 +201,7 @@ class _TasksPageState extends State<TasksPage> {
 class _TaskCard extends StatelessWidget {
   final AppState state;
   final CareTask task;
-  const _TaskCard({required this.state, required this.task});
+  const _TaskCard({super.key, required this.state, required this.task});
 
   @override
   Widget build(BuildContext context) {
@@ -203,129 +220,176 @@ class _TaskCard extends StatelessWidget {
 
     if (!admin && mine) {
       if (task.state == 'dispatched') {
-        actions.add(OutlinedButton(onPressed: () => act('reject'), child: const Text('拒单')));
-        actions.add(FilledButton(onPressed: () => act('accept'), child: const Text('接单')));
+        actions.add(_secondary('拒单', () => act('reject'), color: LinanColors.danger));
+        actions.add(_primary('接单', () => act('accept')));
       } else if (task.state == 'accepted') {
-        actions.add(OutlinedButton(onPressed: () => act('reject'), child: const Text('拒单')));
-        actions.add(OutlinedButton(onPressed: () => act('start'), child: const Text('开始处理')));
-        actions.add(FilledButton(onPressed: () => _action(context, 'feedback'), child: const Text('提交处置结果')));
+        actions.add(_secondary('拒单', () => act('reject'), color: LinanColors.danger));
+        actions.add(_secondary('开始处理', () => act('start')));
+        actions.add(_primary('提交处置结果', () => _action(context, 'feedback')));
       } else if (task.state == 'processing') {
-        actions.add(FilledButton(onPressed: () => _action(context, 'feedback'), child: const Text('提交处置结果')));
+        actions.add(_primary('提交处置结果', () => _action(context, 'feedback')));
       }
     }
     if (admin && task.state == 'review') {
-      actions.add(OutlinedButton(
-        onPressed: () => act('followup'),
-        child: const Text('继续跟进'),
-      ));
-      actions.add(FilledButton(onPressed: () => _action(context, 'close'), child: const Text('核实并关闭')));
+      actions.add(_secondary('继续跟进', () => act('followup')));
+      actions.add(_primary('核实并关闭', () => _action(context, 'close')));
     }
 
+    final hot = task.level >= 2 && task.state != 'closed';
     return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.fromLTRB(16, 13, 16, 12),
+      margin: EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
         color: LinanColors.surface,
-        borderRadius: BorderRadius.circular(11),
+        borderRadius: BorderRadius.circular(LinanColors.rCard),
         border: Border.all(
-          color: task.level >= 2 && task.state != 'closed'
-              ? LevelStyle.of(task.level).fg.withValues(alpha: .22)
-              : LinanColors.border,
+          color: hot ? LevelStyle.of(task.level).fg.withValues(alpha: .28) : LinanColors.borderSoft,
         ),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              LevelPill(task.level),
-              const SizedBox(width: 7),
-              StatePill(task.state),
-              const SizedBox(width: 9),
-              Text('任务 #${task.id}', style: const TextStyle(fontSize: 10, color: LinanColors.faint)),
-              if (task.overdue) ...[
-                const SizedBox(width: 8),
-                const Tag('已超时', color: LinanColors.danger, icon: Icons.schedule),
-              ],
-              const Spacer(),
-              if (task.due != null)
-                Text(
-                  task.overdue ? '应于 ${formatStamp(task.due)} 前完成' : '时限 ${formatStamp(task.due)}',
-                  style: TextStyle(fontSize: 9.5, color: task.overdue ? LinanColors.danger : LinanColors.faint),
-                ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          InkWell(
-            onTap: () => _detail(context),
-            borderRadius: BorderRadius.circular(6),
-            child: Row(
+      clipBehavior: Clip.antiAlias,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: () => _detail(context),
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(18, 15, 18, 14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Expanded(
-                  child: Text(
-                    '${task.elderName} · ${task.title}',
-                    style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600, color: LinanColors.text),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: Wrap(
+                        spacing: 8,
+                        runSpacing: 6,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          LevelPill(task.level),
+                          StatePill(task.state),
+                          if (task.overdue)
+                            Tag('已超时', color: LinanColors.danger, icon: Icons.schedule_rounded),
+                        ],
+                      ),
+                    ),
+                    SizedBox(width: 8),
+                    Padding(
+                      padding: EdgeInsets.only(top: 3),
+                      child: Text('任务 #${task.id}',
+                          style: TextStyle(fontSize: 11.5, color: LinanColors.faint, letterSpacing: .2)),
+                    ),
+                  ],
+                ),
+                SizedBox(height: 11),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: Text(
+                        '${task.elderName} · ${task.title}',
+                        style: TextStyle(
+                            fontSize: 15.5, fontWeight: FontWeight.w600, color: LinanColors.text, height: 1.35, letterSpacing: -.2),
+                      ),
+                    ),
+                    Padding(
+                      padding: EdgeInsets.only(left: 8, top: 2),
+                      child: Icon(Icons.chevron_right_rounded, size: 19, color: LinanColors.faint),
+                    ),
+                  ],
+                ),
+                if (task.advice.isNotEmpty) ...[
+                  SizedBox(height: 5),
+                  Text(
+                    task.advice,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 12, height: 1.6, color: LinanColors.muted),
                   ),
+                ],
+                const SizedBox(height: 10),
+                Wrap(
+                  spacing: 14,
+                  runSpacing: 7,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    _meta(
+                      Icons.person_outline_rounded,
+                      task.staffName.isEmpty ? '待派单' : task.staffName,
+                      color: task.staffName.isEmpty ? LinanColors.amber : null,
+                    ),
+                    _meta(Icons.medical_services_outlined, skillName(task.requiredSkill)),
+                    _meta(
+                      Icons.event_outlined,
+                      task.due == null
+                          ? '未设时限'
+                          : task.overdue
+                              ? '应于 ${formatStamp(task.due)} 前完成'
+                              : '截止 ${formatStamp(task.due)}',
+                      color: task.overdue ? LinanColors.danger : null,
+                      maxWidth: 240,
+                    ),
+                    _meta(Icons.history_rounded, formatStamp(task.created)),
+                    if (task.evidence.isNotEmpty)
+                      _meta(Icons.fact_check_outlined, task.evidence.first, maxWidth: 300),
+                  ],
                 ),
-                const Icon(Icons.chevron_right, size: 16, color: LinanColors.border),
-              ],
-            ),
-          ),
-          if (task.advice.isNotEmpty) ...[
-            const SizedBox(height: 5),
-            Text(task.advice, maxLines: 2, overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontSize: 11, height: 1.6, color: LinanColors.muted)),
-          ],
-          const SizedBox(height: 9),
-          Wrap(
-            spacing: 14,
-            runSpacing: 5,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              _meta(Icons.person_outline, task.staffName.isEmpty ? '待派单' : task.staffName),
-              _meta(Icons.medical_services_outlined, skillName(task.requiredSkill)),
-              _meta(Icons.schedule, formatStamp(task.created)),
-              if (task.evidence.isNotEmpty)
-                ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 360),
-                  child: _meta(Icons.fact_check_outlined, task.evidence.first, ellipsis: true),
-                ),
-            ],
-          ),
-          if (actions.isNotEmpty) ...[
-            const Divider(height: 20),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                for (var i = 0; i < actions.length; i++) ...[
-                  if (i > 0) const SizedBox(width: 8),
-                  SizedBox(height: 30, child: actions[i]),
+                if (actions.isNotEmpty) ...[
+                  const Divider(height: 24),
+                  Wrap(
+                    alignment: WrapAlignment.end,
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: actions,
+                  ),
                 ],
               ],
             ),
-          ],
-        ],
+          ),
+        ),
       ),
     );
   }
 
-  Widget _meta(IconData icon, String text, {bool ellipsis = false}) => Row(
+  Widget _meta(IconData icon, String text, {Color? color, double maxWidth = 200}) => Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 12, color: LinanColors.faint),
-          const SizedBox(width: 4),
+          Icon(icon, size: 13.5, color: color ?? LinanColors.faint),
+          const SizedBox(width: 5),
           ConstrainedBox(
-            constraints: BoxConstraints(maxWidth: ellipsis ? 360 : 150),
+            constraints: BoxConstraints(maxWidth: maxWidth),
             child: Text(
               text,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 10, color: LinanColors.muted),
+              style: TextStyle(fontSize: 11.5, color: color ?? LinanColors.muted),
             ),
           ),
         ],
       );
+
+  Widget _primary(String label, VoidCallback onPressed) => FilledButton(
+        onPressed: onPressed,
+        style: FilledButton.styleFrom(
+          minimumSize: const Size(0, 34),
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          textStyle: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
+        ),
+        child: Text(label),
+      );
+
+  Widget _secondary(String label, VoidCallback onPressed, {Color? color}) {
+    final c = color ?? LinanColors.primary;
+    return OutlinedButton(
+      onPressed: onPressed,
+      style: OutlinedButton.styleFrom(
+        foregroundColor: c,
+        backgroundColor: LinanColors.tint(c, .09),
+        minimumSize: const Size(0, 34),
+        padding: const EdgeInsets.symmetric(horizontal: 14),
+        textStyle: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
+      ),
+      child: Text(label),
+    );
+  }
 
   Future<void> _detail(BuildContext context) async {
     await showSideSheet(
@@ -366,7 +430,7 @@ class _ActionDialog extends StatefulWidget {
 }
 
 class _ActionDialogState extends State<_ActionDialog> {
-  static const Map<String, String> _closeOutcomes = {'safe': '已确认安全', 'data_issue': '数据问题已核查'};
+  static final Map<String, String> _closeOutcomes = {'safe': '已确认安全', 'data_issue': '数据问题已核查'};
   String _outcome = 'safe';
   final TextEditingController _note = TextEditingController();
   String? _error;
@@ -384,10 +448,7 @@ class _ActionDialogState extends State<_ActionDialog> {
   Widget build(BuildContext context) {
     final outcomes = widget.kind == 'close' ? _closeOutcomes : outcomeNames;
     return AlertDialog(
-      title: Text(
-        _isFeedback ? '提交处置结果' : (widget.kind == 'close' ? '核实并关闭任务' : '确认操作'),
-        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-      ),
+      title: Text(_isFeedback ? '提交处置结果' : (widget.kind == 'close' ? '核实并关闭任务' : '确认操作')),
       content: SizedBox(
         width: 420,
         child: Column(
@@ -395,44 +456,50 @@ class _ActionDialogState extends State<_ActionDialog> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             if (widget.kind == 'close')
-              const Padding(
-                padding: EdgeInsets.only(bottom: 12),
+              Container(
+                margin: const EdgeInsets.only(bottom: 14),
+                padding: const EdgeInsets.all(11),
+                decoration: BoxDecoration(
+                  color: LinanColors.tint(LinanColors.amber, .1),
+                  borderRadius: BorderRadius.circular(LinanColors.rControl),
+                ),
                 child: Text(
                   '关闭后风险事件会同步关闭，老人状态回到平稳。仅当联系或上门核实确实安全时使用。',
-                  style: TextStyle(fontSize: 11, height: 1.6, color: LinanColors.muted),
+                  style: TextStyle(fontSize: 11.5, height: 1.6, color: LinanColors.text),
                 ),
               ),
             if (_needsOutcome) ...[
-              const Text('处置结论', style: TextStyle(fontSize: 10.5, color: LinanColors.muted)),
-              const SizedBox(height: 6),
+              Text('处置结论', style: TextStyle(fontSize: 11.5, color: LinanColors.muted, fontWeight: FontWeight.w500)),
+              SizedBox(height: 6),
               DropdownButtonFormField<String>(
                 initialValue: _outcome,
-                decoration: const InputDecoration(isDense: true),
+                decoration: InputDecoration(isDense: true),
                 items: [
                   for (final e in outcomes.entries)
-                    DropdownMenuItem(value: e.key, child: Text(e.value, style: const TextStyle(fontSize: 12))),
+                    DropdownMenuItem(value: e.key, child: Text(e.value, style: const TextStyle(fontSize: 12.5))),
                 ],
                 onChanged: (v) => setState(() => _outcome = v ?? 'safe'),
               ),
-              const SizedBox(height: 12),
+              SizedBox(height: 14),
             ],
-            const Text('记录说明（至少 2 个字）', style: TextStyle(fontSize: 10.5, color: LinanColors.muted)),
-            const SizedBox(height: 6),
+            Text('记录说明（至少 2 个字）',
+                style: TextStyle(fontSize: 11.5, color: LinanColors.muted, fontWeight: FontWeight.w500)),
+            SizedBox(height: 6),
             TextField(
               controller: _note,
               minLines: 3,
               maxLines: 5,
               maxLength: 300,
-              style: const TextStyle(fontSize: 12),
-              decoration: const InputDecoration(
+              style: TextStyle(fontSize: 12.5),
+              decoration: InputDecoration(
                 hintText: '例如：已电话联系，老人表示一切正常。',
-                counterStyle: TextStyle(fontSize: 9, color: LinanColors.faint),
+                counterStyle: TextStyle(fontSize: 11.5, color: LinanColors.faint),
               ),
             ),
             if (_error != null)
               Padding(
-                padding: const EdgeInsets.only(top: 4),
-                child: Text(_error!, style: const TextStyle(fontSize: 10.5, color: LinanColors.danger)),
+                padding: EdgeInsets.only(top: 4),
+                child: Text(_error!, style: TextStyle(fontSize: 11, color: LinanColors.danger)),
               ),
           ],
         ),
@@ -489,12 +556,16 @@ class _TaskDetailBodyState extends State<_TaskDetailBody> {
 
   Widget _refreshButton() => IconButton(
         onPressed: _reload,
-        icon: const Icon(Icons.refresh, size: 15),
-        color: LinanColors.muted,
         tooltip: '重新读取详情',
-        visualDensity: VisualDensity.compact,
+        icon: Icon(Icons.refresh_rounded, size: 16),
+        color: LinanColors.muted,
         padding: EdgeInsets.zero,
-        constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
+        visualDensity: VisualDensity.compact,
+        style: IconButton.styleFrom(
+          backgroundColor: LinanColors.surfaceAlt,
+          minimumSize: Size(28, 28),
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        ),
       );
 
   @override
@@ -503,134 +574,212 @@ class _TaskDetailBodyState extends State<_TaskDetailBody> {
       future: _future,
       builder: (context, snap) {
         if (snap.connectionState != ConnectionState.done) {
-          return const Padding(
+          return Padding(
             padding: EdgeInsets.only(top: 40),
-            child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+            child: Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))),
           );
         }
         if (snap.hasError) {
           return Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Align(alignment: Alignment.centerRight, child: _refreshButton()),
-              EmptyHint('${snap.error}', icon: Icons.error_outline),
+              Container(
+                padding: EdgeInsets.fromLTRB(12, 10, 8, 10),
+                decoration: BoxDecoration(
+                  color: LinanColors.tint(LinanColors.danger, .09),
+                  borderRadius: BorderRadius.circular(LinanColors.rControl),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.error_outline_rounded, size: 16, color: LinanColors.danger),
+                    SizedBox(width: 9),
+                    Expanded(
+                      child: Text('${snap.error}',
+                          style: TextStyle(fontSize: 11.5, height: 1.55, color: LinanColors.danger)),
+                    ),
+                    const SizedBox(width: 6),
+                    _refreshButton(),
+                  ],
+                ),
+              ),
             ],
           );
         }
         final d = snap.data;
-        if (d == null) return const EmptyHint('没有任务详情');
-        final t = d.task;
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
+        if (d == null) return EmptyHint('没有任务详情');
+        return _body(d);
+      },
+    );
+  }
+
+  Widget _body(TaskDetail d) {
+    final t = d.task;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SectionCard(
+          padding: EdgeInsets.fromLTRB(18, 15, 18, 12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  LevelPill(t.level),
+                  SizedBox(width: 8),
+                  StatePill(t.state),
+                  if (t.requiredSkill.isNotEmpty) ...[
+                    SizedBox(width: 8),
+                    Tag(skillName(t.requiredSkill)),
+                  ],
+                  Spacer(),
+                  if (t.overdue) Tag('已超时', color: LinanColors.danger),
+                  SizedBox(width: 6),
+                  _refreshButton(),
+                ],
+              ),
+              SizedBox(height: 10),
+              KeyValue('老人', t.elderName),
+              KeyValue('负责人', t.staffName.isEmpty ? '待派单' : t.staffName),
+              KeyValue('创建时间', formatStamp(t.created)),
+              KeyValue('处理时限', formatStamp(t.due, empty: '未设置')),
+              KeyValue('当前版本', '${t.version}'),
+            ],
+          ),
+        ),
+        SizedBox(height: 14),
+        SectionCard(
+          title: '判断依据',
+          icon: Icons.fact_check_outlined,
+          child: t.evidence.isEmpty
+              ? Text('暂无补充依据', style: TextStyle(fontSize: 12, color: LinanColors.faint))
+              : Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    for (final line in t.evidence)
+                      Padding(
+                        padding: EdgeInsets.only(bottom: 7),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Padding(padding: EdgeInsets.only(top: 6), child: Dot(LinanColors.amber, size: 5)),
+                            SizedBox(width: 8),
+                            Expanded(
+                              child: Text(line, style: TextStyle(fontSize: 12, height: 1.65, color: LinanColors.text)),
+                            ),
+                          ],
+                        ),
+                      ),
+                  ],
+                ),
+        ),
+        SizedBox(height: 14),
+        SectionCard(
+          title: '处置建议',
+          icon: Icons.lightbulb_outline_rounded,
+          child: Text(
+            t.advice.isEmpty ? '按社区流程核实并留痕。' : t.advice,
+            style: TextStyle(fontSize: 12, height: 1.7, color: LinanColors.muted),
+          ),
+        ),
+        SizedBox(height: 14),
+        SectionCard(
+          title: '处置反馈',
+          icon: Icons.forum_outlined,
+          child: d.feedback.isEmpty
+              ? Text('尚未提交反馈', style: TextStyle(fontSize: 12, color: LinanColors.faint))
+              : Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    for (final f in d.feedback)
+                      Container(
+                        margin: EdgeInsets.only(bottom: 8),
+                        padding: EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: LinanColors.surfaceAlt,
+                          borderRadius: BorderRadius.circular(LinanColors.rControl),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Tag(outcomeName('${f['outcome'] ?? ''}'),
+                                    color: '${f['outcome']}' == 'safe' ? LinanColors.green : LinanColors.amber),
+                                Spacer(),
+                                Text(formatStamp(f['created'] is num ? f['created'] as num : null),
+                                    style: TextStyle(fontSize: 11, color: LinanColors.faint)),
+                              ],
+                            ),
+                            if ('${f['note'] ?? ''}'.isNotEmpty)
+                              Padding(
+                                padding: EdgeInsets.only(top: 6),
+                                child: Text('${f['note']}',
+                                    style: TextStyle(fontSize: 12, height: 1.6, color: LinanColors.text)),
+                              ),
+                          ],
+                        ),
+                      ),
+                  ],
+                ),
+        ),
+        SizedBox(height: 14),
+        SectionCard(
+          title: '审计时间线',
+          icon: Icons.history_rounded,
+          child: d.audit.isEmpty
+              ? Text('暂无审计记录', style: TextStyle(fontSize: 12, color: LinanColors.faint))
+              : Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    for (final a in d.audit.reversed) _auditRow(a),
+                  ],
+                ),
+        ),
+        if (d.agentRuns.isNotEmpty) ...[
+          SizedBox(height: 14),
+          SectionCard(
+            title: 'Agent 运行记录',
+            icon: Icons.auto_awesome_outlined,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                LevelPill(t.level),
-                const SizedBox(width: 8),
-                StatePill(t.state),
-                const SizedBox(width: 8),
-                Tag(skillName(t.requiredSkill)),
-                const Spacer(),
-                if (t.overdue) const Tag('已超时', color: LinanColors.danger),
-                _refreshButton(),
+                for (final run in d.agentRuns)
+                  Padding(
+                    padding: EdgeInsets.only(bottom: 10),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                '${runKindName('${run['kind'] ?? ''}')} #${run['id']}',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: LinanColors.text),
+                              ),
+                            ),
+                            SizedBox(width: 8),
+                            Tag(modeName('${run['mode'] ?? ''}'), color: LinanColors.primary),
+                            SizedBox(width: 8),
+                            Text(runStatusName('${run['status'] ?? ''}'),
+                                style: TextStyle(fontSize: 11.5, color: LinanColors.muted)),
+                          ],
+                        ),
+                        if ('${run['summary'] ?? ''}'.isNotEmpty)
+                          Padding(
+                            padding: EdgeInsets.only(top: 4),
+                            child: Text('${run['summary']}',
+                                style: TextStyle(fontSize: 11.5, height: 1.55, color: LinanColors.muted)),
+                          ),
+                      ],
+                    ),
+                  ),
               ],
             ),
-            const SizedBox(height: 14),
-            KeyValue('老人', d.task.elderName),
-            KeyValue('负责人', t.staffName.isEmpty ? '待派单' : t.staffName),
-            KeyValue('创建时间', formatStamp(t.created)),
-            KeyValue('处理时限', formatStamp(t.due, empty: '未设置')),
-            KeyValue('当前版本', '${t.version}'),
-            const Divider(height: 22),
-            const _SectionLabel('判断依据'),
-            if (t.evidence.isEmpty)
-              const Text('暂无补充依据', style: TextStyle(fontSize: 11, color: LinanColors.faint))
-            else
-              for (final line in t.evidence)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 7),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Padding(padding: EdgeInsets.only(top: 5), child: Dot(LinanColors.amber, size: 5)),
-                      const SizedBox(width: 8),
-                      Expanded(child: Text(line, style: const TextStyle(fontSize: 11.5, height: 1.65))),
-                    ],
-                  ),
-                ),
-            const SizedBox(height: 8),
-            const _SectionLabel('处置建议'),
-            Text(t.advice.isEmpty ? '按社区流程核实并留痕。' : t.advice,
-                style: const TextStyle(fontSize: 11.5, height: 1.7, color: LinanColors.muted)),
-            const Divider(height: 24),
-            const _SectionLabel('处置反馈'),
-            if (d.feedback.isEmpty)
-              const Text('尚未提交反馈', style: TextStyle(fontSize: 11, color: LinanColors.faint))
-            else
-              for (final f in d.feedback)
-                Container(
-                  margin: const EdgeInsets.only(bottom: 8),
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: LinanColors.surfaceAlt,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Tag(outcomeName('${f['outcome'] ?? ''}'),
-                              color: '${f['outcome']}' == 'safe' ? LinanColors.green : LinanColors.amber),
-                          const Spacer(),
-                          Text(formatStamp(f['created'] is num ? f['created'] as num : null),
-                              style: const TextStyle(fontSize: 9.5, color: LinanColors.faint)),
-                        ],
-                      ),
-                      if ('${f['note'] ?? ''}'.isNotEmpty)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 5),
-                          child: Text('${f['note']}', style: const TextStyle(fontSize: 11, height: 1.6)),
-                        ),
-                    ],
-                  ),
-                ),
-            const Divider(height: 24),
-            const _SectionLabel('审计时间线'),
-            for (final a in d.audit.reversed) _auditRow(a),
-            if (d.agentRuns.isNotEmpty) ...[
-              const Divider(height: 24),
-              const _SectionLabel('Agent 运行记录'),
-              for (final run in d.agentRuns)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 10),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Text('${runKindName('${run['kind'] ?? ''}')} #${run['id']}',
-                              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600)),
-                          const SizedBox(width: 8),
-                          Tag(modeName('${run['mode'] ?? ''}'), color: LinanColors.primary),
-                          const Spacer(),
-                          Text(runStatusName('${run['status'] ?? ''}'),
-                              style: const TextStyle(fontSize: 9.5, color: LinanColors.muted)),
-                        ],
-                      ),
-                      if ('${run['summary'] ?? ''}'.isNotEmpty)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 3),
-                          child: Text('${run['summary']}',
-                              style: const TextStyle(fontSize: 10.5, height: 1.55, color: LinanColors.muted)),
-                        ),
-                    ],
-                  ),
-                ),
-            ],
-          ],
-        );
-      },
+          ),
+        ],
+      ],
     );
   }
 
@@ -639,24 +788,24 @@ class _TaskDetailBodyState extends State<_TaskDetailBody> {
     final detail = auditDetail(a);
     final actor = auditActor(a['actor']);
     return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
+      padding: EdgeInsets.only(bottom: 8),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Padding(
-            padding: const EdgeInsets.only(top: 4),
+            padding: EdgeInsets.only(top: 5),
             child: Dot(a['action'] == 'task_close' ? LinanColors.green : LinanColors.border, size: 6),
           ),
-          const SizedBox(width: 8),
+          SizedBox(width: 8),
           Expanded(
             child: Text(
               detail.isEmpty ? '${auditName(a['action'])} · $actor' : '${auditName(a['action'])} · $detail',
-              style: const TextStyle(fontSize: 11, height: 1.55),
+              style: TextStyle(fontSize: 11.5, height: 1.55, color: LinanColors.text),
             ),
           ),
-          const SizedBox(width: 8),
+          SizedBox(width: 8),
           Text(formatStamp(a['created'] is num ? a['created'] as num : null),
-              style: const TextStyle(fontSize: 9, color: LinanColors.faint)),
+              style: TextStyle(fontSize: 11, color: LinanColors.faint)),
         ],
       ),
     );
@@ -701,17 +850,6 @@ String auditActor(dynamic actor) {
   return name == 'system' ? '系统' : name;
 }
 
-class _SectionLabel extends StatelessWidget {
-  final String text;
-  const _SectionLabel(this.text);
-
-  @override
-  Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.only(bottom: 8),
-        child: Text(text, style: const TextStyle(fontSize: 9.5, letterSpacing: .8, color: LinanColors.faint)),
-      );
-}
-
 class _RecommendDialog extends StatefulWidget {
   final AppState state;
   const _RecommendDialog({required this.state});
@@ -730,9 +868,11 @@ class _RecommendDialogState extends State<_RecommendDialog> {
     super.initState();
     for (final r in widget.state.recs) {
       _staffChoice[r.id] = r.staffId;
-      _reasons[r.id] = TextEditingController();
     }
   }
+
+  /// 推荐结果可能在面板打开期间刷新，这里按需创建原因输入框的控制器。
+  TextEditingController _reason(String id) => _reasons.putIfAbsent(id, () => TextEditingController());
 
   @override
   void dispose() {
@@ -746,95 +886,47 @@ class _RecommendDialogState extends State<_RecommendDialog> {
   Widget build(BuildContext context) {
     final s = widget.state;
     final recs = s.recs;
-    return Dialog(
-      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 720, maxHeight: 640),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(22, 18, 12, 12),
-              child: Row(
-                children: [
-                  const Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('派单建议', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
-                        SizedBox(height: 3),
-                        Text('按优先级与人员容量计算，确认时会再次校验版本与技能。',
-                            style: TextStyle(fontSize: 10.5, color: LinanColors.muted)),
-                      ],
-                    ),
-                  ),
-                  IconButton(onPressed: () => Navigator.of(context).pop(), icon: const Icon(Icons.close, size: 18)),
-                ],
-              ),
-            ),
-            const Divider(height: 1),
-            Expanded(
-              child: recs.isEmpty
-                  ? SingleChildScrollView(
-                      padding: const EdgeInsets.all(22),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          EmptyHint(s.recNote.isEmpty ? '当前没有待派任务' : s.recNote, icon: Icons.task_alt),
-                          if (s.unassigned.isNotEmpty) ...[
-                            const SizedBox(height: 10),
-                            const Text('未能分配的任务', style: TextStyle(fontSize: 11, color: LinanColors.muted)),
-                            const SizedBox(height: 6),
-                            Wrap(
-                              spacing: 6,
-                              runSpacing: 6,
-                              children: [for (final id in s.unassigned) Tag('任务 #$id', color: LinanColors.amber)],
-                            ),
-                          ],
-                        ],
-                      ),
-                    )
-                  : SingleChildScrollView(
-                      padding: const EdgeInsets.fromLTRB(20, 14, 20, 8),
-                      child: Column(
-                        children: [
-                          for (final r in recs) _recRow(s, r),
-                          if (s.unassigned.isNotEmpty)
-                            Align(
-                              alignment: Alignment.centerLeft,
-                              child: Padding(
-                                padding: const EdgeInsets.only(top: 4, bottom: 8),
-                                child: Text('另有 ${s.unassigned.length} 条任务暂时无法分配：${s.unassigned.map((e) => '#$e').join('、')}',
-                                    style: const TextStyle(fontSize: 10, color: LinanColors.amber)),
-                              ),
-                            ),
-                          if (s.recNote.isNotEmpty)
-                            Align(
-                              alignment: Alignment.centerLeft,
-                              child: Padding(
-                                padding: const EdgeInsets.only(top: 2, bottom: 10),
-                                child: Text(s.recNote, style: const TextStyle(fontSize: 10, color: LinanColors.faint)),
-                              ),
-                            ),
-                        ],
-                      ),
-                    ),
-            ),
-            const Divider(height: 1),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 10, 20, 12),
-              child: Row(
-                children: [
-                  Text('推荐 ${recs.length} 条 · 5 分钟内有效',
-                      style: const TextStyle(fontSize: 10, color: LinanColors.faint)),
-                  const Spacer(),
-                  TextButton(onPressed: _submitting ? null : () => Navigator.of(context).pop(), child: const Text('关闭')),
-                ],
+    if (recs.isEmpty) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          EmptyHint(s.recNote.isEmpty ? '当前没有待派任务' : s.recNote, icon: Icons.task_alt_rounded),
+          if (s.unassigned.isNotEmpty) ...[
+            SizedBox(height: 8),
+            SectionCard(
+              title: '未能分配的任务',
+              icon: Icons.report_outlined,
+              child: Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: [for (final id in s.unassigned) Tag('任务 #$id', color: LinanColors.amber)],
               ),
             ),
           ],
-        ),
-      ),
+        ],
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (final r in recs) _recRow(s, r),
+        if (s.unassigned.isNotEmpty)
+          Padding(
+            padding: EdgeInsets.only(top: 2, bottom: 8),
+            child: Text(
+              '另有 ${s.unassigned.length} 条任务暂时无法分配：${s.unassigned.map((e) => '#$e').join('、')}',
+              style: TextStyle(fontSize: 11, height: 1.55, color: LinanColors.amber),
+            ),
+          ),
+        if (s.recNote.isNotEmpty)
+          Padding(
+            padding: EdgeInsets.only(top: 2, bottom: 8),
+            child: Text(s.recNote, style: TextStyle(fontSize: 11, height: 1.55, color: LinanColors.faint)),
+          ),
+        SizedBox(height: 4),
+        Text('推荐 ${recs.length} 条 · 5 分钟内有效',
+            style: TextStyle(fontSize: 11, color: LinanColors.faint)),
+      ],
     );
   }
 
@@ -842,105 +934,109 @@ class _RecommendDialogState extends State<_RecommendDialog> {
     final task = s.taskById(r.taskId);
     final chosen = _staffChoice[r.id] ?? r.staffId;
     final changed = chosen != r.staffId;
-    final candidates =
-        s.staff.where((p) => p.onDuty && p.available && !p.busy).toList();
+    final candidates = s.staff.where((p) => p.onDuty && p.available && !p.busy).toList();
     if (!candidates.any((p) => p.id == chosen)) {
       // 推荐结果里的人员可能刚变得不可派单；保留为选项，避免下拉值与 item 列表不一致。
       final current = s.staffById(chosen);
       if (current != null) candidates.add(current);
     }
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.fromLTRB(13, 11, 13, 11),
-      decoration: BoxDecoration(
-        color: LinanColors.surfaceAlt.withValues(alpha: .5),
-        borderRadius: BorderRadius.circular(9),
-        border: Border.all(color: LinanColors.borderSoft),
-      ),
+    final value = candidates.any((p) => p.id == chosen) ? chosen : null;
+    return SectionCard(
+      padding: EdgeInsets.fromLTRB(15, 13, 15, 13),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Row(
             children: [
               LevelPill(r.level),
-              const SizedBox(width: 7),
+              SizedBox(width: 8),
               Expanded(
                 child: Text(
                   task == null ? '任务 #${r.taskId}' : '${task.elderName} · ${task.title}',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: LinanColors.text),
                 ),
               ),
-              Text(r.eta > 0 ? '预计 ${(r.eta / 60).ceil()} 分钟到达' : '等待计算到达时间',
-                  style: const TextStyle(fontSize: 9.5, color: LinanColors.muted)),
+              SizedBox(width: 8),
+              Text(
+                r.eta > 0 ? '预计 ${r.eta} 分钟到达' : '等待计算到达时间',
+                style: TextStyle(fontSize: 11.5, color: LinanColors.muted),
+              ),
             ],
           ),
-          const SizedBox(height: 4),
-          Text(r.reason, style: const TextStyle(fontSize: 10.5, height: 1.55, color: LinanColors.muted)),
-          const SizedBox(height: 8),
+          SizedBox(height: 4),
+          Text(r.reason, style: TextStyle(fontSize: 11.5, height: 1.55, color: LinanColors.muted)),
+          SizedBox(height: 10),
           Row(
             children: [
-              const Text('负责人', style: TextStyle(fontSize: 10.5, color: LinanColors.muted)),
-              const SizedBox(width: 8),
-              SizedBox(
-                width: 130,
-                child: DropdownButton<int>(
-                  value: chosen,
-                  isDense: true,
-                  underline: const SizedBox.shrink(),
-                  style: const TextStyle(fontSize: 11, color: LinanColors.text),
-                  items: [
-                    for (final p in candidates)
-                      DropdownMenuItem(value: p.id, child: Text('${p.name} · ${p.location}号楼', style: const TextStyle(fontSize: 11))),
-                  ],
-                  onChanged: (v) {
-                    if (v != null) setState(() => _staffChoice[r.id] = v);
-                  },
-                ),
-              ),
-              if (changed) ...[
-                const SizedBox(width: 10),
-                Expanded(
-                  child: TextField(
-                    controller: _reasons[r.id],
-                    style: const TextStyle(fontSize: 11),
-                    decoration: const InputDecoration(
-                      isDense: true,
-                      hintText: '调整原因（至少 2 字）',
-                      contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-                    ),
+              Text('负责人', style: TextStyle(fontSize: 11.5, color: LinanColors.muted)),
+              SizedBox(width: 10),
+              Expanded(
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: DropdownButton<int>(
+                    value: value,
+                    isDense: true,
+                    underline: SizedBox.shrink(),
+                    borderRadius: BorderRadius.circular(LinanColors.rControl),
+                    hint: Text('暂无可用人员', style: TextStyle(fontSize: 11.5, color: LinanColors.faint)),
+                    style: TextStyle(fontSize: 12, color: LinanColors.text, fontWeight: FontWeight.w500),
+                    items: [
+                      for (final p in candidates)
+                        DropdownMenuItem(
+                          value: p.id,
+                          child: Text('${p.name} · ${p.location}号楼', style: const TextStyle(fontSize: 12)),
+                        ),
+                    ],
+                    onChanged: (v) {
+                      if (v != null) setState(() => _staffChoice[r.id] = v);
+                    },
                   ),
                 ),
-              ],
-              const Spacer(),
-              SizedBox(
-                height: 30,
-                child: FilledButton(
-                  onPressed: _submitting
-                      ? null
-                      : () async {
-                          final reason = (_reasons[r.id]?.text ?? '').trim();
-                          if (changed && reason.length < 2) {
-                            s.toast('调整负责人需要填写原因');
-                            return;
-                          }
-                          setState(() => _submitting = true);
-                          try {
-                            await s.confirmRecommendation(r, chosen, changed ? reason : '');
-                            if (!mounted) return;
-                            setState(() {});
-                          } on Object catch (e) {
-                            s.toast('$e');
-                          } finally {
-                            if (mounted) setState(() => _submitting = false);
-                          }
-                        },
-                  child: const Text('确认派单', style: TextStyle(fontSize: 11)),
+              ),
+              const SizedBox(width: 10),
+              FilledButton(
+                onPressed: _submitting
+                    ? null
+                    : () async {
+                        final reason = _reason(r.id).text.trim();
+                        if (changed && reason.length < 2) {
+                          s.toast('调整负责人需要填写原因');
+                          return;
+                        }
+                        setState(() => _submitting = true);
+                        try {
+                          await s.confirmRecommendation(r, value ?? chosen, changed ? reason : '');
+                          if (!mounted) return;
+                          setState(() {});
+                        } on Object catch (e) {
+                          s.toast('$e');
+                        } finally {
+                          if (mounted) setState(() => _submitting = false);
+                        }
+                      },
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size(0, 34),
+                  padding: const EdgeInsets.symmetric(horizontal: 14),
+                  textStyle: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
                 ),
+                child: const Text('确认派单'),
               ),
             ],
           ),
+          if (changed) ...[
+            const SizedBox(height: 8),
+            TextField(
+              controller: _reason(r.id),
+              style: const TextStyle(fontSize: 12),
+              decoration: const InputDecoration(
+                isDense: true,
+                hintText: '调整原因（至少 2 字）',
+                contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+              ),
+            ),
+          ],
         ],
       ),
     );

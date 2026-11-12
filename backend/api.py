@@ -18,6 +18,7 @@ from .routes import core as core_routes
 from .routes import elders as elder_routes
 from .routes import lab as lab_routes
 from .routes import ops as ops_routes
+from .routes import settings as settings_routes
 from .routes import workflows as workflow_routes
 from .workflows import Workflows
 
@@ -30,6 +31,7 @@ def create_app(db_path=None, demo=True, background=True):
     fresh = db.seed()
     engine = Engine(db)
     provider = ModelProvider()
+    provider.load(db)
     workflows = Workflows(db, engine, provider)
     assistant = Assistant(db, engine, provider)
     mcp = LinAnMcp(db, engine, assistant)
@@ -72,7 +74,8 @@ def create_app(db_path=None, demo=True, background=True):
     app.state.mcp = mcp
     app.state.replay_cache = {}
 
-    for module in (core_routes, elder_routes, ops_routes, lab_routes, assistant_routes, workflow_routes):
+    for module in (core_routes, elder_routes, ops_routes, lab_routes, assistant_routes,
+                   workflow_routes, settings_routes):
         app.include_router(module.router)
 
     if fresh and demo:

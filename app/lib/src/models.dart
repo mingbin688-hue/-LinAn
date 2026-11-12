@@ -793,3 +793,56 @@ String formatSpan(num? seconds) {
   final d = (s / 86400).floor();
   return '$d 天';
 }
+
+/// 管理员可编辑的云端模型配置；服务端只回传密钥尾号提示，不回传明文。
+class LlmSettings {
+  final bool enabled;
+  final bool requested;
+  final bool configured;
+  final String mode;
+  final String baseUrl;
+  final String model;
+  final bool apiKeySet;
+  final String apiKeyHint;
+  final String source;
+  final String? fallbackReason;
+  final double? updatedAt;
+  final String? updatedBy;
+
+  const LlmSettings({
+    required this.enabled,
+    required this.requested,
+    required this.configured,
+    required this.mode,
+    required this.baseUrl,
+    required this.model,
+    required this.apiKeySet,
+    required this.apiKeyHint,
+    required this.source,
+    this.fallbackReason,
+    this.updatedAt,
+    this.updatedBy,
+  });
+
+  bool get usesModel => mode == 'llm';
+  String get sourceLabel => switch (source) {
+        'database' => '本机设置',
+        'environment' => '环境变量',
+        _ => '未配置',
+      };
+
+  factory LlmSettings.fromJson(Map<String, dynamic> json) => LlmSettings(
+        enabled: _b(json['enabled']),
+        requested: _b(json['requested']),
+        configured: _b(json['configured']),
+        mode: _s(json['mode'], 'rules'),
+        baseUrl: _s(json['base_url']),
+        model: _s(json['model']),
+        apiKeySet: _b(json['api_key_set']),
+        apiKeyHint: _s(json['api_key_hint']),
+        source: _s(json['source']),
+        fallbackReason: json['fallback_reason'] == null ? null : _s(json['fallback_reason']),
+        updatedAt: json['updated_at'] is num ? (json['updated_at'] as num).toDouble() : null,
+        updatedBy: json['updated_by'] == null ? null : _s(json['updated_by']),
+      );
+}
