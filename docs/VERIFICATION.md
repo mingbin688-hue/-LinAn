@@ -47,6 +47,69 @@ powershell -ExecutionPolicy Bypass -File .\Verify.ps1 -FlutterExecutable E:\tool
 - 未接入真实社区、短信、电话或救援调度；助手为规则模式，模型只解释证据与建议。
 - 服务空闲超过 30 分钟后老人会因缺少新活动数据进入「状态未知」，这是「数据缺失=未知」的既有规则，不是崩溃。
 
+## 2026年11月11日 持久化任务、上下文封装与 MCP 验证
+
+环境同上（Windows 11，Flutter 3.47.9，Python 3.14.8 + `.venv`）。统一入口：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\Verify.ps1
+```
+
+结果文件：`runtime/verify/20261111-235615-86dba58e/verification.json`，`success: true`，四个步骤退出码均为 0。
+
+| 项目 | 结果 |
+|---|---|
+| Python 后端测试 | 60 项通过，16.8 秒，1 条 Starlette/httpx 弃用警告 |
+| Flutter 静态检查 | `flutter analyze --no-pub`：No issues found |
+| Flutter 单元测试 | `flutter test --no-pub`：1 项通过 |
+| Windows 构建 | `flutter build windows --release --no-pub` 通过，18.9 秒 |
+| 存储迁移 | 测试模拟 v1/v2 旧库：账号、会话、任务与事件保留，补齐 `jobs`、`mcp_tokens`、运行定义版本与上下文摘要列，`schema_version` 升到 `3`，同一任务只重建 1 条风险运行 |
+| 持久化任务 | 解释任务先入 `jobs` 排队，规则节点与自动派单不等待模型；重启和过期租约只恢复一次，`dispatch_confirmed` 不重复；死信运行标记失败并可重试 |
+| 上下文封装 | 助手响应返回预算、实际字符、脱敏、规则、缺口与工具调用；联系人不出现在模型提示中；小预算时按顺序裁剪并标记截断 |
+| MCP HTTP | 管理员签发一次性明文令牌 → `initialize`、`tools/list`、`linan_scope`、越权工具报错 → 撤销后 401；`/api/mcp/status` 返回协议、工具/资源/提示计数 |
+| MCP 对象权限 | 家属令牌只能查询关联老人；查询其他老人和 `linan_jobs` 返回 `isError`，不泄露对象内容 |
+| MCP stdio | 临时数据库实测 `python -m backend.mcp_stdio`：3 条 JSON-RPC（initialize、tools/list、linan_scope）全部正确响应，退出码 0；临时文件已删除 |
+
+新增界面（持久化任务卡、MCP 接入卡、助手上下文摘要、运行重试）已通过 `flutter analyze`、`flutter test` 与 Windows Release 构建；本次未逐项人工点击这些新卡片，界面验收仍以隔离实例人工操作为准。MCP 与模型均未接入真实供应商，规则模式结论不受影响。
+
+## 2026年11月12日 三轮审计、修复与重构后验证
+
+环境同上（Windows 11，Flutter 3.47.9，Python 3.14.8 + `.venv`）。统一入口：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\Verify.ps1 -FlutterExecutable E:\tools\flutter\bin\flutter.bat
+```
+
+结果文件：`runtime/verify/20261112-005439-cc1fc2a6/verification.json`，`success: true`，四个步骤退出码均为 0。
+
+| 项目 | 结果 |
+|---|---|
+| Python 后端测试 | 70 项通过，16.8 秒，1 条 Starlette/httpx 弃用警告 |
+| Flutter 静态检查 | `flutter analyze --no-pub`：No issues found（4.1 秒） |
+| Flutter 单元测试 | `flutter test --no-pub`：4 项通过（3.5 秒） |
+| Windows 构建 | `flutter build windows --release --no-pub` 通过（20.6 秒） |
+| 源码包 | `runtime/verify/20261112-005532-39364b73`：148 个文件，`artifacts/linan-source.zip`，逐文件字节数与 SHA256 与磁盘一致（清单见 `artifacts/linan-source.manifest.json`） |
+
+本轮审计发现并修复的主要问题：
+
+| 类别 | 问题 | 修复 |
+|---|---|---|
+| 通知越权 | `/api/notifications` 先取全局 300 条再按角色过滤，家属/照护人员可能看不到自己的通知 | 改为 SQL 内按 `role`/`staff_id`/`elder_id` 过滤后再取 30 条，并加测试覆盖 |
+| 人员更新 | 客户端只提交单个字段，后端要求全量字段，开关操作恒 422 | 后端改为可选字段合并更新（空对象 422），客户端乐观更新并失败回滚 |
+| 请求风暴 | 任务详情与助手引用详情在 `build()` 里发请求，抽屉打开期间无限重取 | 改为 StatefulWidget 缓存 future，仅在显式刷新时重取 |
+| 会话失效 | 仅刷新接口处理 401，其它页面遇 401 静默失败 | `ApiClient` 统一回调清会话，UI 自动回登录页 |
+| 作业失败 | 解释任务异常时只靠租约过期重试，`jobs.fail` 无调用方 | `drain()` 捕获异常、写失败节点、按退避重排，达上限转死信；补持久化与重启测试 |
+| 登录限流 | 失败计数只按用户名清理，长期运行会累积 | 超过阈值整体裁剪并保留近 10 次 |
+| MCP 鉴权 | 普通登录会话令牌也可当 MCP Bearer 使用 | 仅接受专用 MCP 令牌，登录令牌返回 401；补充文档与测试 |
+| 元数据 | 界面写死规则版本、统计卡按整页拉取、健康信息不暴露版本 | `/api/health` 返回规则/模型/数据结构版本，界面读取真实值 |
+| 打包 | 源码包混入 `app/build/web` 与 `.flutter-plugins-dependencies`（含本机路径），清单与实际文件不一致 | 打包器改为流式写入并排除上述文件与 `.metadata`，重新打包后清单哈希与磁盘逐一核对 |
+| 启动脚本 | 非本机地址时健康检查指向 127.0.0.1；后台启动失败会留下隐藏进程与 pid 文件 | 健康检查按绑定地址推导，成功后才写 `server.json`，失败清理进程与 pid 文件；`Stop.ps1` 按启动时间校验并删除记录 |
+| 文档/依赖 | README 徽章与实测数不一致、`joblib` 未列入 `requirements.txt`、第三方声明缺后端依赖 | 数字以本次实测为准，补齐依赖与声明，实验报告改为按结果数据生成 |
+
+结构重构：`backend/api.py` 由 617 行拆为应用工厂（87 行）+ `backend/routes/` 六个路由模块 + `schemas.py`/`deps.py`/`session.py`/`serializers.py` 公共层；`scope.py` 成为唯一的可见范围实现，删除 `agents.py`、`api.py` 中的重复定义；`workflow_store.py` 移除无调用方的接口并新增 `finish()`；`ml.py` 训练改为 numpy 向量化并对模型缓存设上限。所有改动均有 `tests/test_hardening.py`（10 项）与本轮既有测试覆盖，业务规则、状态机、唯一索引与审计行为保持不变。
+
+已知限制：桌面客户端仅完成静态检查、单元测试与 Release 构建，没有在本轮逐页人工点击；模型与 MCP 仍是规则模式与本地令牌演练，未接入真实供应商；实验数据是 CASAS 与合成数据的离线评估，不代表真实社区效果。
+
 ## 历史记录（迁移前 Vue 版本，已由 Flutter 版替代）
 
 - 2026-11-10：修复本地启动入口，新增 `Stop.ps1`；后台隐藏启动、健康轮询、重复启动复用、停止校验均实测通过。

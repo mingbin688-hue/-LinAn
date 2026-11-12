@@ -13,6 +13,35 @@
 
 风险工作流在新增或更新风险时触发；反馈工作流在处置反馈后触发；对话工作流由助手消息触发。运行记录和节点结果保存在 SQLite。模型生成在后台执行，不持有写事务，也不延迟规则判断和可执行的自动派单。
 
+工作流定义是声明式数据（`backend/workflow_defs.py`，当前版本 2），运行记录保存定义版本与上下文摘要指纹。旧数据库启动时自动补齐列、迁移历史模型任务；被中断的运行在重启后从已有节点继续，不重复派单。
+
+## 持久化任务与恢复
+
+模型解释与复核摘要进入持久化队列 `jobs`，规则节点不等待模型：
+
+- 任务以 `(kind, key)` 唯一，同一运行不会重复入队；风险与复核的解释任务键为运行 ID。
+- 工作进程以 30 秒租约认领任务，处理期间可被其他实例看到但不可抢占；完成后写回结果。
+- 失败按指数退避重试（5 秒起，最长 300 秒），达到 3 次进入死信，运行标记为回退模式，规则结果仍然可用。
+- 崩溃或重启后，过期租约自动回到排队状态；已完成节点保留，不重复执行。
+- 管理员可在“工作流中心 → 持久化任务”查看排队、运行、失败、死信与取消状态，并重试或取消任务；失败或取消的运行可整体重试。
+
+接口：`GET /api/workflows/stats`、`GET /api/workflows/jobs`、`POST /api/workflows/jobs/{id}/retry|cancel`、`POST /api/workflows/runs/{id}/retry`（均仅管理员）。
+
+## 上下文封装与预算
+
+助手与流程节点共用 `backend/context_pack.py`。每次请求按当前身份重新收集可见老人、未关闭事件、任务与已确认推荐，再生成带预算的上下文包：
+
+- 默认预算 6000 字符，可用 `LINAN_CONTEXT_MAX_CHARS` 调整；超限时按“对话历史 → 推荐 → 任务明细 → 老人明细 → 老人条目”的顺序裁剪，并记录截断标志。
+- 联系人字段不进入模型上下文；结果提供脱敏计数、脱敏规则、数据缺口与裁剪说明。
+- 上下文带指纹（`fingerprint`），写入对话运行的 `context_digest`，便于复核当时模型看到的内容。
+- 助手响应额外返回 `context` 摘要（字符、预算、分段、脱敏、缺口、工具调用），前端在回复下方展示。
+
+## MCP 接入
+
+邻安提供只读 MCP 服务：HTTP 端点 `POST /mcp`，或以 stdio 方式供 Claude Desktop、Codex 等客户端启动。管理员签发一次性明文令牌，可设置有效期并随时撤销；每次调用重新校验角色和对象范围，联系人字段与写操作均不可见。工具、资源、提示与配置示例见 [MCP.md](MCP.md)。
+
+管理员可在“工作流中心 → MCP 接入”查看端点、协议版本、能力计数和令牌列表。
+
 管理员可在“工作流中心”查看节点输入、结果、耗时、运行模式和等待原因；任务详情显示与该任务有关的 Agent 建议。模型结果是解释和建议，实际派单仍复用现有事务、版本和人员校验。
 
 ## 自动派单
@@ -72,7 +101,7 @@ powershell -ExecutionPolicy Bypass -File .\Verify.ps1 -InstallFrontendDependenci
 powershell -ExecutionPolicy Bypass -File .\Verify.ps1 -Package
 ```
 
-Flutter 客户端验证依赖可用的 SDK；脚本依次查找 PATH、`E:/tools/flutter/bin/flutter.bat` 和 `%LOCALAPPDATA%/flutter`，也可用 `-FlutterExecutable` 指定。桌面验收使用隔离实例：`Start.ps1` 以临时 `LINAN_DB` 启动后运行 `linan_app.exe`；开发时可用 `flutter run -d windows` 热重载。Android 用 APK 或 `flutter run -d <device>` 连接。验收结束只停止自己启动的服务，不使用或修改 `runtime/linan.sqlite3`。
+Flutter 客户端验证依赖可用的 SDK；脚本依次查找 PATH、`E:/tools/flutter/bin/flutter.bat` 和 `%LOCALAPPDATA%/flutter`，也可用 `-FlutterExecutable` 指定。桌面验收使用隔离实例：`Start.ps1 -Background -Database runtime\verify\demo.sqlite3` （等价于在启动前设置临时 `LINAN_DB`）后运行 `linan_app.exe`，服务与数据库都不指向日常实例；开发时可用 `flutter run -d windows` 热重载。Android 用 APK 或 `flutter run -d <device>` 连接。验收结束只停止自己启动的服务，不使用或修改 `runtime/linan.sqlite3`。
 
 每次执行在 `runtime/verify/日期-编号/` 保存步骤日志和 `verification.json`。单步默认超时 600 秒，可用 `-StepTimeoutSeconds` 调整。部分 Windows 受限沙箱不允许 asyncio 建立本机回环套接字，此时后端检查应在允许本机网络的终端重跑；这是环境条件，不应据此改动业务权限或测试断言。
 

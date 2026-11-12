@@ -518,7 +518,7 @@ def test_incremental_migration_preserves_existing_accounts_sessions_and_tasks(ag
         session_count = con.execute('SELECT count(*) FROM sessions').fetchone()[0]
         # The remaining tables are exactly the v1 storage boundary. Drop children
         # first and retain all pre-existing records and bearer sessions.
-        for table in ('assistant_messages', 'assistant_sessions', 'agent_jobs',
+        for table in ('assistant_messages', 'assistant_sessions', 'jobs', 'mcp_tokens',
                       'workflow_nodes', 'workflow_exclusions', 'workflow_runs'):
             con.execute('DROP TABLE ' + table)
         con.execute("DELETE FROM settings WHERE key IN ('auto_dispatch','dispatch_fingerprint')")
@@ -536,7 +536,7 @@ def test_incremental_migration_preserves_existing_accounts_sessions_and_tasks(ag
     runs = cc.get('/api/workflows/runs', headers=admin).json()
     assert len([run for run in runs if run['task_id'] == task['id']]) == 1
     with migrated.state.db.transaction() as con:
-        assert con.execute("SELECT value FROM settings WHERE key='schema_version'").fetchone()[0] == '2'
+        assert con.execute("SELECT value FROM settings WHERE key='schema_version'").fetchone()[0] == '3'
         assert con.execute("SELECT password FROM users WHERE username='admin'").fetchone()[0] == original_password
         assert con.execute('SELECT count(*) FROM sessions').fetchone()[0] == session_count
         assert con.execute("SELECT count(*) FROM events WHERE id='legacy-event'").fetchone()[0] == 1
@@ -566,7 +566,7 @@ def test_persistent_model_job_generates_after_rules_and_does_not_hold_write_lock
     run = next(run for run in client.get('/api/workflows/runs', headers=admin).json()
                if run['task_id'] == task['id'])
     with app.state.db.transaction() as con:
-        assert con.execute('SELECT state FROM agent_jobs WHERE run_id=?', (run['id'],)).fetchone()[0] == 'queued'
+        assert con.execute("SELECT state FROM jobs WHERE kind='explanation' AND job_key=?", (run['id'],)).fetchone()[0] == 'queued'
     app.state.workflows.drain()
     app.state.workflows.drain()
     assert len(requests) == 1
@@ -592,13 +592,13 @@ def test_expired_model_job_lease_recovers_after_restart_without_duplicate_dispat
     task = task_for(client, admin)
     assert task['state'] == 'dispatched' and not requests
     with app.state.db.transaction(True) as con:
-        run_id = con.execute('SELECT run_id FROM agent_jobs').fetchone()[0]
-        con.execute("UPDATE agent_jobs SET state='running',lease_until=?,attempts=1 WHERE run_id=?",
+        run_id = con.execute("SELECT job_key FROM jobs WHERE kind='explanation'").fetchone()[0]
+        con.execute("UPDATE jobs SET state='running',lease_until=?,attempts=1 WHERE kind='explanation' AND job_key=?",
                     (time.time() + 30, run_id))
     app.state.workflows.drain()
     assert not requests, 'Another worker may not steal a live lease'
     with app.state.db.transaction(True) as con:
-        con.execute('UPDATE agent_jobs SET lease_until=? WHERE run_id=?', (time.time() - 1, run_id))
+        con.execute("UPDATE jobs SET lease_until=? WHERE kind='explanation' AND job_key=?", (time.time() - 1, run_id))
     resumed = create_app(app.state.db.path, demo=False, background=False)
     configure_mock_model(resumed, respond)
     resumed.state.workflows.process()
@@ -606,7 +606,7 @@ def test_expired_model_job_lease_recovers_after_restart_without_duplicate_dispat
     resumed.state.workflows.drain()
     assert len(requests) == 1
     with resumed.state.db.transaction() as con:
-        job = con.execute('SELECT * FROM agent_jobs WHERE run_id=?', (run_id,)).fetchone()
+        job = con.execute("SELECT * FROM jobs WHERE kind='explanation' AND job_key=?", (run_id,)).fetchone()
         assert job['state'] == 'done' and job['attempts'] == 2
         assert con.execute("SELECT count(*) FROM audit WHERE entity_id=? AND action='dispatch_confirmed'",
                            (task['id'],)).fetchone()[0] == 1
@@ -616,3 +616,106 @@ def test_expired_model_job_lease_recovers_after_restart_without_duplicate_dispat
     detail = cc.get('/api/workflows/runs/' + run_id, headers=admin).json()
     assert detail['mode'] == 'fallback'
     assert any(node['input'].get('historical') for node in detail['nodes'])
+
+
+def test_assistant_reports_context_budget_redactions_and_hides_contacts(agent_env):
+    app, client, headers = agent_env
+    captured = {}
+
+    def respond(request):
+        captured['prompt'] = request.content.decode('utf-8')
+        return model_reply({'summary': '王桂兰的数据在线，按现有记录核实。',
+                            'evidence': [{'type': 'elder', 'id': '1'}], 'actions': []})
+
+    configure_mock_model(app, respond)
+    result = ask(client, headers('admin'), '汇总王桂兰的风险依据', elder_id=1)
+    context = result['context']
+    assert context['budget'] == 6000
+    assert 0 < context['chars'] <= context['budget']
+    assert context['fingerprint'] and not context['truncated']
+    assert context['redactions'] >= 1
+    assert context['redaction_rules']
+    assert {section['key'] for section in context['sections']} >= {'elders'}
+    assert context['tools'] == []
+    assert '演示联系人' not in captured['prompt']
+    assert 'contact' not in json.dumps(context['scope'], ensure_ascii=False)
+
+    def call_tool(request):
+        return httpx.Response(200, json={'choices': [{'message': {'content': None, 'tool_calls': [{
+            'id': 'query-1', 'type': 'function', 'function': {
+                'name': 'query_records', 'arguments': json.dumps({'elder_id': 1})}}]}}]})
+
+    configure_mock_model(app, call_tool)
+    asked = ask(client, headers('admin'), '再查一次', elder_id=1)
+    assert asked['mode'] == 'fallback' and len(asked['context']['tools']) == 3
+    assert all(item['elder_id'] == 1 and item['chars'] > 0 for item in asked['context']['tools'])
+
+
+def test_context_trims_records_to_budget_and_reports_the_gap(agent_env):
+    app, client, headers = agent_env
+    app.state.assistant.context.budget = 700
+    result = ask(client, headers('admin'), '列出全部老人')
+    context = result['context']
+    assert context['budget'] == 700 and context['chars'] <= 700
+    assert context['truncated'] is True
+    assert context['gaps']
+
+
+def test_mcp_token_lifecycle_and_read_only_tools(agent_env):
+    app, client, headers = agent_env
+    admin = headers()
+    issued = client.post('/api/mcp/tokens', headers=admin,
+                         json={'label': '答辩演示', 'expires_hours': 2})
+    assert issued.status_code == 200, issued.text
+    data = issued.json()
+    assert data['token'].startswith('mcp_') and data['label'] == '答辩演示'
+    assert data['expires'] > time.time()
+    token_headers = {'Authorization': 'Bearer ' + data['token']}
+
+    def rpc(mid, method, params=None):
+        return client.post('/mcp', headers=token_headers, json={
+            'jsonrpc': '2.0', 'id': mid, 'method': method, 'params': params or {}})
+
+    init = rpc(1, 'initialize')
+    assert init.status_code == 200 and init.json()['result']['protocolVersion'] == '2025-06-18'
+    tools = [item['name'] for item in rpc(2, 'tools/list').json()['result']['tools']]
+    assert {'linan_scope', 'linan_elders', 'linan_tasks', 'linan_context', 'linan_jobs'} <= set(tools)
+    call = rpc(3, 'tools/call', {'name': 'linan_scope', 'arguments': {}})
+    result = call.json()['result']
+    assert result['isError'] is False
+    scope = json.loads(result['content'][0]['text'])
+    assert scope['user']['role'] == 'admin' and len(scope['elders']) == 20
+    unknown = rpc(4, 'tools/call', {'name': 'execute_sql', 'arguments': {}})
+    assert unknown.json()['result']['isError'] is True
+    assert 'DELETE' not in json.dumps(unknown.json())
+
+    status = client.get('/api/mcp/status', headers=admin).json()
+    assert status['protocol'] == '2025-06-18' and status['tools'] == 11
+    assert status['resources'] == 7 and status['prompts'] == 2
+    assert any(item['id'] == data['id'] for item in status['tokens'])
+    assert client.get('/api/mcp/status', headers=headers('family')).status_code == 403
+
+    assert client.delete('/api/mcp/tokens/' + data['id'], headers=admin).json() == {'ok': True}
+    assert rpc(5, 'tools/list').status_code == 401
+
+
+def test_mcp_token_rechecks_object_scope_for_each_call(agent_env):
+    app, client, headers = agent_env
+    with app.state.db.transaction(True) as con:
+        issued = app.state.mcp.mint_token(con, 'family', '家属受限令牌', 1)
+    token_headers = {'Authorization': 'Bearer ' + issued['token']}
+    allowed = client.post('/mcp', headers=token_headers, json={
+        'jsonrpc': '2.0', 'id': 1, 'method': 'tools/call',
+        'params': {'name': 'linan_elders', 'arguments': {'elder_id': 1}}})
+    assert allowed.json()['result']['isError'] is False
+    denied = client.post('/mcp', headers=token_headers, json={
+        'jsonrpc': '2.0', 'id': 2, 'method': 'tools/call',
+        'params': {'name': 'linan_elders', 'arguments': {'elder_id': 2}}})
+    body = denied.json()['result']
+    assert body['isError'] is True
+    assert '李建国' not in body['content'][0]['text']
+    jobs = client.post('/mcp', headers=token_headers, json={
+        'jsonrpc': '2.0', 'id': 3, 'method': 'tools/call',
+        'params': {'name': 'linan_jobs', 'arguments': {}}})
+    assert jobs.json()['result']['isError'] is True
+

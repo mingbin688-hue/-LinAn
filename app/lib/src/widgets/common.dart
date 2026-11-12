@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 import '../labels.dart';
-import '../models.dart';
 import '../theme.dart';
 
 class LevelPill extends StatelessWidget {
@@ -400,10 +399,3 @@ Future<bool> confirmDialog(
   );
   return result == true;
 }
-
-String shortTime(int stamp) => formatStamp(stamp);
-
-String minutesText(num minutes) => '${minutes.round()} 分钟';
-
-String levelCountText(List<Incident> incidents) =>
-    '${incidents.where((i) => i.open && i.level >= 2).length} 条优先/紧急';

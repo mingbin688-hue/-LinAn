@@ -44,16 +44,36 @@ def vector(row, baseline):
             math.log1p(row['gap']),math.sin(slot*2*math.pi/96),math.cos(slot*2*math.pi/96)]
 
 
+def casas_split(share=(.6, .8)):
+    """Chronological CASAS windows: train / validation / replay."""
+    file = Path(__file__).resolve().parents[1] / 'data' / 'aruba_windows.csv'
+    if not file.exists():
+        return None
+    with file.open(encoding='utf-8') as handle:
+        rows = [{k: (int(float(v)) if k in ('slot', 'count15', 'count60') else float(v))
+                 for k, v in r.items()} for r in csv.DictReader(handle)]
+    days = len(rows) // 96
+    cut, hold = int(days * share[0]) * 96, int(days * share[1]) * 96
+    return dict(rows=rows, train=rows[:cut], validation=rows[cut:hold], replay=rows[hold:],
+                train_days=cut // 96)
+
+
 class PersonalModel:
     def __init__(self, train, validation):
-        self.baseline=np.array([np.mean([r['count15'] for r in train if r.get('slot',slot_at(r['timestamp']))==s])
-                                if any(r.get('slot',slot_at(r['timestamp']))==s for r in train) else 1 for s in range(96)])
+        slots = np.array([row.get('slot', slot_at(row['timestamp'])) for row in train], dtype=int)
+        counts = np.array([row['count15'] for row in train], dtype=float)
+        self.baseline = np.array([
+            counts[slots == slot].mean() if (slots == slot).any() else 1.0 for slot in range(96)])
         self.model=IsolationForest(n_estimators=80,random_state=42,contamination='auto',n_jobs=1)
         self.model.fit(np.array([vector(r,self.baseline) for r in train]))
         self.reference=-self.model.score_samples(np.array([vector(r,self.baseline) for r in validation]))
         self.threshold=float(np.quantile(self.reference,.98))
-        self.idle_limits=np.array([max(30,float(np.quantile(
-            [r['gap'] for r in train if min(abs(r.get('slot',slot_at(r['timestamp']))-s),96-abs(r.get('slot',slot_at(r['timestamp']))-s))<=4],.9))) for s in range(96)])
+        gaps = np.array([row['gap'] for row in train], dtype=float)
+        clock = np.arange(96)
+        distance = np.minimum(abs(slots[:, None] - clock), 96 - abs(slots[:, None] - clock))
+        self.idle_limits = np.array([
+            max(30.0, float(np.quantile(gaps[distance[:, slot] <= 4], .9)))
+            if (distance[:, slot] <= 4).any() else 30.0 for slot in range(96)])
 
     def predict_many(self,rows):
         return -self.model.score_samples(np.array([vector(r,self.baseline) for r in rows]))
@@ -81,6 +101,14 @@ class ModelRegistry:
     def __init__(self):
         self.models={}
 
+    def remember(self,elder_id,profile,model):
+        """Install an externally trained model (replay) under the registry's own key."""
+        key=(elder_id,profile.get('activity_scale',1),profile.get('origin','synthetic'))
+        self.models[key]=model
+        while len(self.models)>128:
+            self.models.pop(next(iter(self.models)))
+        return key
+
     def evaluate(self,elder_id,profile,state,at):
         if profile.get('history_days',0)<14:
             return {'anomaly':False,'score':0,'evidence':['历史不足14天，基线学习中；保留人工上报与报平安规则']}
@@ -89,17 +117,14 @@ class ModelRegistry:
             if profile.get('origin') in ('manual-demo','accumulated-activity-windows'):
                 return {'anomaly':False,'score':0,'evidence':['有效活动窗口尚不足以建立个人模型，继续学习；保留人工上报规则']}
             if profile.get('origin')=='CASAS Aruba replay':
-                file=Path(__file__).resolve().parents[1]/'data'/'aruba_windows.csv'
-                if not file.exists():
+                split=casas_split()
+                if split is None:
                     return {'anomaly':False,'score':0,'evidence':['公开数据模型未准备；保留人工核实与报平安规则']}
-                with file.open(encoding='utf-8') as f:
-                    rows=[{k:float(v) if k!='slot' else int(v) for k,v in r.items()} for r in csv.DictReader(f)]
-                days=len(rows)//96;a=int(days*.6)*96;b=int(days*.8)*96
-                self.models[key]=PersonalModel(rows[:a],rows[a:b])
+                self.remember(elder_id,profile,PersonalModel(split['train'],split['validation']))
             else:
                 rows=synthetic_windows(40,key[1],42+elder_id)
                 cut=int(len(rows)*.75)
-                self.models[key]=PersonalModel(rows[:cut],rows[cut:])
+                self.remember(elder_id,profile,PersonalModel(rows[:cut],rows[cut:]))
         result=self.models[key].evaluate({'timestamp':state.get('model_timestamp',at),'count15':state['count15'],
                                          'count60':state['count60'],'gap':state['gap']})
         result['evidence'].append(f"基线来源：{profile.get('origin','synthetic')}；分位分数不代表疾病概率")

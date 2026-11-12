@@ -18,10 +18,17 @@ class LabPage extends StatefulWidget {
 class _LabPageState extends State<LabPage> {
   int? _elderId;
   int _offset = 0;
+  final TextEditingController _offsetCtrl = TextEditingController(text: '0');
   bool _replaying = false;
   Map<String, dynamic>? _replayResult;
 
   AppState get s => widget.state;
+
+  @override
+  void dispose() {
+    _offsetCtrl.dispose();
+    super.dispose();
+  }
 
   static const List<(String, String, String)> _scenarios = [
     ('story', '完整闭环', '注入未报平安、活动骤降与主动求助，走完派单与复核。'),
@@ -31,12 +38,6 @@ class _LabPageState extends State<LabPage> {
     ('conflict', '冲突信号', '求助与安全信号并存时，按更高风险处理。'),
     ('normal', '平稳日常', '恢复一组正常活动，观察状态回落。'),
   ];
-
-  @override
-  void initState() {
-    super.initState();
-    if (s.experiment == null) s.loadExperiment();
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -171,7 +172,7 @@ class _LabPageState extends State<LabPage> {
               SizedBox(
                 width: 150,
                 child: TextFormField(
-                  initialValue: '$_offset',
+                  controller: _offsetCtrl,
                   keyboardType: TextInputType.number,
                   decoration: const InputDecoration(labelText: '窗口偏移', isDense: true),
                   style: const TextStyle(fontSize: 11.5),
@@ -378,6 +379,8 @@ class _LabPageState extends State<LabPage> {
         _replayResult = data;
         _offset = (data['offset'] as num?)?.toInt() ?? _offset;
       });
+      // 回放会推进窗口偏移，输入框是受控组件，需要同步显示后端返回的值。
+      _offsetCtrl.text = '$_offset';
       await s.refresh();
     } on Object catch (e) {
       s.toast('$e');

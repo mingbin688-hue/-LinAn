@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 
 import '../app_state.dart';
 import '../labels.dart';
+import '../models.dart';
 import '../theme.dart';
+import '../widgets/common.dart';
 
 class AssistantPage extends StatefulWidget {
   final AppState state;
@@ -18,6 +20,7 @@ class _ChatBubble {
   final List<Map<String, dynamic>> citations;
   final String mode;
   final String fallbackReason;
+  final ContextSummary? context;
   final bool error;
 
   const _ChatBubble({
@@ -26,6 +29,7 @@ class _ChatBubble {
     this.citations = const [],
     this.mode = '',
     this.fallbackReason = '',
+    this.context,
     this.error = false,
   });
 }
@@ -105,6 +109,7 @@ class _AssistantPageState extends State<AssistantPage> {
           citations: reply.citations,
           mode: reply.mode,
           fallbackReason: reply.fallbackReason,
+          context: reply.context,
         ));
       });
     } on Object catch (e) {
@@ -494,6 +499,7 @@ class _AssistantPageState extends State<AssistantPage> {
                       ],
                     ),
                   ],
+                  if (!user && m.context != null) _contextPanel(m.context!, m.citations.length),
                   if (!user && m.mode.isNotEmpty)
                     Padding(
                       padding: const EdgeInsets.only(top: 6),
@@ -507,6 +513,114 @@ class _AssistantPageState extends State<AssistantPage> {
             ),
           ),
           if (user) const SizedBox(width: 34),
+        ],
+      ),
+    );
+  }
+
+  /// 回复下方的上下文摘要：chars/budget、引用数、脱敏数与截断提示，可展开看明细。
+  Widget _contextPanel(ContextSummary c, int citationCount) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 9),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              Tag(
+                '上下文 ${_compactCount(c.chars)}/${_compactCount(c.budget)}',
+                color: LinanColors.primary,
+                icon: Icons.description_outlined,
+              ),
+              Tag('引用 $citationCount', color: LinanColors.muted, icon: Icons.link),
+              Tag(
+                '脱敏 ${c.redactions}',
+                color: c.redactions > 0 ? LinanColors.warm : LinanColors.muted,
+                icon: Icons.visibility_off_outlined,
+              ),
+              if (c.truncated) const Tag('已截断', color: LinanColors.amber, icon: Icons.content_cut),
+            ],
+          ),
+          if (c.hasDetails)
+            Theme(
+              data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+              child: ExpansionTile(
+                tilePadding: EdgeInsets.zero,
+                childrenPadding: const EdgeInsets.only(bottom: 2),
+                dense: true,
+                visualDensity: VisualDensity.compact,
+                title: const Text('上下文明细', style: TextStyle(fontSize: 9.5, color: LinanColors.faint)),
+                children: [
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.fromLTRB(9, 8, 9, 8),
+                    decoration: BoxDecoration(color: LinanColors.surfaceAlt, borderRadius: BorderRadius.circular(7)),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (c.sections.isNotEmpty) ...[
+                          const Text('上下文分区',
+                              style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.w600, color: LinanColors.muted)),
+                          const SizedBox(height: 4),
+                          for (final section in c.sections)
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 2),
+                              child: Text(
+                                '· ${section.title.isEmpty ? section.key : section.title}'
+                                '　${section.records} 条 · ${section.chars} 字符',
+                                style: const TextStyle(fontSize: 9.5, height: 1.5, color: LinanColors.muted),
+                              ),
+                            ),
+                        ],
+                        if (c.gaps.isNotEmpty) ...[
+                          const SizedBox(height: 6),
+                          const Text('数据缺口（未知，不推断安全）',
+                              style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.w600, color: LinanColors.amber)),
+                          const SizedBox(height: 3),
+                          for (final gap in c.gaps)
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 2),
+                              child: Text('· $gap',
+                                  style: const TextStyle(fontSize: 9.5, height: 1.5, color: LinanColors.warm)),
+                            ),
+                        ],
+                        if (c.redactionRules.isNotEmpty) ...[
+                          const SizedBox(height: 6),
+                          Text('脱敏规则（共 ${c.redactions} 处）',
+                              style: const TextStyle(fontSize: 9.5, fontWeight: FontWeight.w600, color: LinanColors.muted)),
+                          const SizedBox(height: 3),
+                          for (final rule in c.redactionRules)
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 2),
+                              child: Text('· $rule',
+                                  style: const TextStyle(fontSize: 9.5, height: 1.5, color: LinanColors.muted)),
+                            ),
+                        ],
+                        if (c.tools.isNotEmpty) ...[
+                          const SizedBox(height: 6),
+                          const Text('受限工具查询',
+                              style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.w600, color: LinanColors.muted)),
+                          const SizedBox(height: 3),
+                          for (final tool in c.tools)
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 2),
+                              child: Text(
+                                '· ${tool.query.isEmpty ? '记录查询' : tool.query}'
+                                '${tool.elderId == null ? '' : ' · 老人 #${tool.elderId}'}'
+                                '${tool.taskId == null ? '' : ' · 任务 ${tool.taskId}'}'
+                                '　${tool.records} 条',
+                                style: const TextStyle(fontSize: 9.5, height: 1.5, color: LinanColors.faint),
+                              ),
+                            ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
         ],
       ),
     );
@@ -550,33 +664,221 @@ class _AssistantPageState extends State<AssistantPage> {
   }
 
   void _openCitation(Map<String, dynamic> c, String type) {
-    final id = c['id'];
-    if (type == 'task' && id is num) {
-      s.selectPage('tasks');
-    } else if (type == 'elder' && id is num) {
-      s.selectPage('elders');
-    } else if (type == 'workflow' && id is num) {
-      s.selectPage('workflows');
-    } else {
-      showDialog<void>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: const Text('依据详情', style: TextStyle(fontSize: 15)),
-          content: SingleChildScrollView(
-            child: Text(
-              c.entries.map((e) => '${e.key}: ${e.value}').join('\n'),
-              style: const TextStyle(fontSize: 11, height: 1.7),
-            ),
-          ),
-          actions: [TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('知道了'))],
-        ),
-      );
+    // 后端 scope / context_pack 会把引用 id 统一转成字符串（type/id/label），
+    // 所以这里按字符串比较，不能再判断 `id is num`。
+    final id = '${c['id'] ?? ''}'.trim();
+    final label = '${c['label'] ?? c['title'] ?? c['name'] ?? c['summary'] ?? ''}'.trim();
+    if (id.isEmpty || id == 'null') {
+      _showCitationRaw(c);
+      return;
     }
+    if (type == 'task') {
+      _goto('tasks');
+      _showCitationSheet(
+        title: '任务 #$id',
+        subtitle: label.isEmpty ? '引用任务详情' : label,
+        child: _CitationTaskBody(state: s, taskId: id),
+      );
+    } else if (type == 'elder') {
+      final elderId = int.tryParse(id);
+      if (elderId == null) {
+        _showCitationRaw(c);
+        return;
+      }
+      _goto('elders');
+      _showCitationSheet(
+        title: '老人档案 #$id',
+        subtitle: label.isEmpty ? '引用老人详情' : label,
+        child: _CitationElderBody(state: s, elderId: elderId),
+      );
+    } else if (type == 'workflow') {
+      // 运行记录页只对管理员开放；无权限时仍回退到原始引用信息。
+      if (!_goto('workflows')) _showCitationRaw(c);
+    } else {
+      // 未知类型仍回退为原始 key:value 详情弹窗。
+      _showCitationRaw(c);
+    }
+  }
+
+  /// 只跳到当前角色导航里存在的页面，避免家属/老人被切到不存在的页面。
+  bool _goto(String key) {
+    if (!s.navs.any((n) => n.key == key)) return false;
+    s.selectPage(key);
+    return true;
+  }
+
+  void _showCitationSheet({required String title, required String subtitle, required Widget child}) {
+    // showSideSheet 自带滚动容器与内边距，这里不再套一层 SingleChildScrollView。
+    showSideSheet(context, title: title, subtitle: subtitle, child: child);
+  }
+
+  void _showCitationRaw(Map<String, dynamic> c) {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('依据详情', style: TextStyle(fontSize: 15)),
+        content: SingleChildScrollView(
+          child: Text(
+            c.entries.map((e) => '${e.key}: ${e.value}').join('\n'),
+            style: const TextStyle(fontSize: 11, height: 1.7),
+          ),
+        ),
+        actions: [TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('知道了'))],
+      ),
+    );
   }
 
   @override
   void initState() {
     super.initState();
     if (!s.isCareSide && s.tasks.length == 1) _taskId = s.tasks.first.id;
+  }
+}
+
+/// 1234 → 1.2K，6000 → 6K；不足 1000 保持原值。
+String _compactCount(int value) {
+  if (value < 1000) return '$value';
+  final k = value / 1000;
+  if (k < 999.5) return '${_compactScaled(k)}K';
+  return '${_compactScaled(value / 1000000)}M';
+}
+
+String _compactScaled(double value) {
+  if (value >= 10) return '${value.round()}';
+  final text = value.toStringAsFixed(1);
+  return text.endsWith('.0') ? text.substring(0, text.length - 2) : text;
+}
+
+/// 助手引用里的任务：按 /api/tasks/{id} 取详情展示。
+/// future 在 initState 中缓存一次，避免每次重建都重新发起请求。
+class _CitationTaskBody extends StatefulWidget {
+  final AppState state;
+  final String taskId;
+  const _CitationTaskBody({required this.state, required this.taskId});
+
+  @override
+  State<_CitationTaskBody> createState() => _CitationTaskBodyState();
+}
+
+class _CitationTaskBodyState extends State<_CitationTaskBody> {
+  late Future<TaskDetail> _future;
+
+  @override
+  void initState() {
+    super.initState();
+    _future = widget.state.taskDetail(widget.taskId);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<TaskDetail>(
+      future: _future,
+      builder: (context, snap) {
+        if (snap.connectionState != ConnectionState.done) {
+          return const Padding(
+            padding: EdgeInsets.only(top: 36),
+            child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+          );
+        }
+        if (snap.hasError) {
+          return EmptyHint('任务 ${widget.taskId} 加载失败：${snap.error}', icon: Icons.error_outline);
+        }
+        final d = snap.data;
+        if (d == null) return EmptyHint('没有任务 #${widget.taskId} 的详情', icon: Icons.error_outline);
+        final t = d.task;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                LevelPill(t.level),
+                const SizedBox(width: 8),
+                StatePill(t.state),
+                if (t.requiredSkill.isNotEmpty) ...[
+                  const SizedBox(width: 8),
+                  Tag(skillName(t.requiredSkill)),
+                ],
+                const Spacer(),
+                if (t.overdue) const Tag('已超时', color: LinanColors.danger),
+              ],
+            ),
+            const SizedBox(height: 12),
+            KeyValue('老人', '${t.elderName} · 档案 #${t.elderId}'),
+            KeyValue('任务', t.title),
+            KeyValue('负责人', t.staffName.isEmpty ? '待派单' : t.staffName),
+            KeyValue('截止', t.due == null ? '不设截止时间' : formatStamp(t.due)),
+            KeyValue('建议', t.advice.isEmpty ? '暂无建议' : t.advice),
+            const SizedBox(height: 10),
+            const Text(
+              '可前往「任务中心」按权限跟进或提交处置结果。',
+              style: TextStyle(fontSize: 10, height: 1.6, color: LinanColors.faint),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+/// 助手引用里的老人：按 /api/elders/{id} 取档案摘要展示（future 在 initState 中缓存）。
+class _CitationElderBody extends StatefulWidget {
+  final AppState state;
+  final int elderId;
+  const _CitationElderBody({required this.state, required this.elderId});
+
+  @override
+  State<_CitationElderBody> createState() => _CitationElderBodyState();
+}
+
+class _CitationElderBodyState extends State<_CitationElderBody> {
+  late Future<Elder> _future;
+
+  @override
+  void initState() {
+    super.initState();
+    _future = widget.state.elderDetail(widget.elderId);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<Elder>(
+      future: _future,
+      builder: (context, snap) {
+        if (snap.connectionState != ConnectionState.done) {
+          return const Padding(
+            padding: EdgeInsets.only(top: 36),
+            child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+          );
+        }
+        if (snap.hasError) {
+          return EmptyHint('老人档案 #${widget.elderId} 加载失败：${snap.error}', icon: Icons.error_outline);
+        }
+        final e = snap.data;
+        if (e == null) return EmptyHint('没有老人 #${widget.elderId} 的档案', icon: Icons.error_outline);
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                LevelPill(e.level),
+                const SizedBox(width: 8),
+                if (e.dataUnknown) const Tag('数据缺失 = 未知', color: LinanColors.warm),
+              ],
+            ),
+            const SizedBox(height: 12),
+            KeyValue('姓名', e.name),
+            KeyValue('年龄 / 楼栋', '${e.age} 岁 · ${e.building}'),
+            KeyValue('数据来源', e.origin),
+            KeyValue('历史基线', '${e.historyDays} 天 · ${e.baselineReady ? '可用于个性化判断' : '学习中，暂不生成成熟基线'}'),
+            KeyValue('未关闭事件', '${e.incidentCount} 条'),
+            const SizedBox(height: 10),
+            const Text(
+              '可前往「老人档案」查看完整详情与最近上报。',
+              style: TextStyle(fontSize: 10, height: 1.6, color: LinanColors.faint),
+            ),
+          ],
+        );
+      },
+    );
   }
 }

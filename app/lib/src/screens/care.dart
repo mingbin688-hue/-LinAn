@@ -22,7 +22,9 @@ class CarePage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final elder = state.elders.isEmpty ? null : state.elders.first;
+    // 家属/老人账号必须用关联档案，不能靠 elders 列表顺序。
+    final elder = state.elderFor(state.user);
+    if (elder == null) return _notBound();
     final records = state.incidents.take(8).toList();
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(20, 18, 20, 28),
@@ -45,22 +47,18 @@ class CarePage extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('$_greeting，${elder?.name ?? '您好'}',
+                    Text('$_greeting，${elder.name}',
                         style: const TextStyle(fontSize: 21, fontWeight: FontWeight.w600, color: Colors.white)),
                     const SizedBox(height: 5),
                     Text(
-                      elder == null
-                          ? '正在读取你的社区档案…'
-                          : '${elder.building} · 梧桐里社区 · ${elder.online ? '设备在线' : '设备离线'}',
+                      '${elder.building} · 梧桐里社区 · ${elder.online ? '设备在线' : '设备离线'}',
                       style: const TextStyle(fontSize: 11, color: Color(0xCCE8F1EA)),
                     ),
                     const SizedBox(height: 16),
                     Text(
-                      elder == null
-                          ? ''
-                          : (elder.level >= 2
-                              ? '社区已收到需要关注的信号，工作人员会尽快联系你。'
-                              : '一切正常。如果有任何不舒服或需要帮忙，点下面的按钮就好。'),
+                      elder.level >= 2
+                          ? '社区已收到需要关注的信号，工作人员会尽快联系你。'
+                          : '一切正常。如果有任何不舒服或需要帮忙，点下面的按钮就好。',
                       style: const TextStyle(fontSize: 11.5, height: 1.7, color: Color(0xDDEAF2EC)),
                     ),
                     const SizedBox(height: 18),
@@ -145,6 +143,33 @@ class CarePage extends StatelessWidget {
                 ),
               ),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 家属/老人账号没有关联档案时显示空态，不拿 elders.first 顶替（会看到别人的数据或直接崩溃）。
+  Widget _notBound() {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(20, 18, 20, 28),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 820),
+          child: SectionCard(
+            title: '我的照护档案',
+            subtitle: '这个页面只显示与你账号关联的老人档案和记录。',
+            child: Column(
+              children: [
+                const EmptyHint('尚未绑定老人档案', icon: Icons.badge_outlined),
+                const SizedBox(height: 4),
+                Text(
+                  '请联系社区工作人员确认账号与老人档案的关联；绑定后即可上报状态、查看记录。',
+                  style: const TextStyle(fontSize: 10, height: 1.6, color: LinanColors.muted),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -252,31 +277,55 @@ class CarePage extends StatelessWidget {
   }
 
   Future<int?> _askHours(BuildContext context) {
-    final controller = TextEditingController(text: '2');
     return showDialog<int>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('大概外出多久？', style: TextStyle(fontSize: 15)),
-        content: TextField(
-          controller: controller,
-          keyboardType: TextInputType.number,
-          decoration: const InputDecoration(labelText: '小时（1–24）', isDense: true),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('取消')),
-          FilledButton(
-            onPressed: () {
-              final h = int.tryParse(controller.text.trim());
-              if (h == null || h < 1 || h > 24) {
-                state.toast('请输入 1–24 之间的小时数');
-                return;
-              }
-              Navigator.of(ctx).pop(h);
-            },
-            child: const Text('确定'),
-          ),
-        ],
+      builder: (_) => _HoursDialog(state: state),
+    );
+  }
+}
+
+/// 外出时长输入；控制器由 State 持有并在 dispose 释放，取消和确认都不会泄漏。
+class _HoursDialog extends StatefulWidget {
+  final AppState state;
+  const _HoursDialog({required this.state});
+
+  @override
+  State<_HoursDialog> createState() => _HoursDialogState();
+}
+
+class _HoursDialogState extends State<_HoursDialog> {
+  late final TextEditingController _controller = TextEditingController(text: '2');
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _confirm() {
+    final h = int.tryParse(_controller.text.trim());
+    if (h == null || h < 1 || h > 24) {
+      widget.state.toast('请输入 1–24 之间的小时数');
+      return;
+    }
+    Navigator.of(context).pop(h);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('大概外出多久？', style: TextStyle(fontSize: 15)),
+      content: TextField(
+        controller: _controller,
+        keyboardType: TextInputType.number,
+        autofocus: true,
+        onSubmitted: (_) => _confirm(),
+        decoration: const InputDecoration(labelText: '小时（1–24）', isDense: true),
       ),
+      actions: [
+        TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('取消')),
+        FilledButton(onPressed: _confirm, child: const Text('确定')),
+      ],
     );
   }
 }

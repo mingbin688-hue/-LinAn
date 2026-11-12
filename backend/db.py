@@ -25,6 +25,10 @@ def password_valid(password, stored):
 class Database:
     def __init__(self, path):
         self.path = Path(path)
+        if str(self.path) == ':memory:':
+            # Every transaction opens its own connection, so an in-memory database
+            # would silently lose its schema between transactions.
+            raise ValueError('内存数据库不受支持：每个事务使用独立连接，请改用临时文件数据库。')
         self.path.parent.mkdir(parents=True, exist_ok=True)
 
     @contextlib.contextmanager
@@ -86,18 +90,30 @@ class Database:
               id TEXT PRIMARY KEY,kind TEXT NOT NULL,trigger_key TEXT UNIQUE NOT NULL,
               elder_id INTEGER REFERENCES elders(id),task_id TEXT REFERENCES tasks(id),owner TEXT,
               status TEXT NOT NULL,mode TEXT NOT NULL,summary TEXT NOT NULL,snapshot TEXT NOT NULL,
+              definition_version INTEGER NOT NULL DEFAULT 1,context_digest TEXT NOT NULL DEFAULT '',
               created REAL NOT NULL,updated REAL NOT NULL);
             CREATE INDEX IF NOT EXISTS workflow_task ON workflow_runs(task_id,created);
             CREATE TABLE IF NOT EXISTS workflow_nodes(
               id INTEGER PRIMARY KEY AUTOINCREMENT,run_id TEXT REFERENCES workflow_runs(id),
               node_key TEXT,name TEXT,agent TEXT,status TEXT,input TEXT,output TEXT,
               elapsed_ms REAL DEFAULT 0,mode TEXT DEFAULT 'rules',error TEXT,
-              UNIQUE(run_id,node_key));
-            CREATE TABLE IF NOT EXISTS agent_jobs(
-              run_id TEXT PRIMARY KEY REFERENCES workflow_runs(id),state TEXT DEFAULT 'queued',
-              lease_until REAL DEFAULT 0,attempts INTEGER DEFAULT 0);
+              attempts INTEGER NOT NULL DEFAULT 0,started REAL NOT NULL DEFAULT 0,
+              finished REAL NOT NULL DEFAULT 0,UNIQUE(run_id,node_key));
             CREATE TABLE IF NOT EXISTS workflow_exclusions(
               task_id TEXT PRIMARY KEY REFERENCES tasks(id),reason TEXT,created REAL);
+            CREATE TABLE IF NOT EXISTS jobs(
+              id TEXT PRIMARY KEY,kind TEXT NOT NULL,job_key TEXT NOT NULL,payload TEXT NOT NULL,
+              state TEXT NOT NULL,priority INTEGER NOT NULL DEFAULT 100,run_at REAL NOT NULL,
+              attempts INTEGER NOT NULL DEFAULT 0,max_attempts INTEGER NOT NULL DEFAULT 3,
+              lease_until REAL NOT NULL DEFAULT 0,last_error TEXT,result TEXT,
+              created REAL NOT NULL,updated REAL NOT NULL);
+            CREATE UNIQUE INDEX IF NOT EXISTS one_active_job ON jobs(kind,job_key)
+              WHERE state IN ('queued','running');
+            CREATE INDEX IF NOT EXISTS jobs_state ON jobs(state,run_at);
+            CREATE TABLE IF NOT EXISTS mcp_tokens(
+              id TEXT PRIMARY KEY,token_hash TEXT UNIQUE NOT NULL,username TEXT NOT NULL,
+              label TEXT NOT NULL,created REAL NOT NULL,expires REAL NOT NULL DEFAULT 0,
+              last_used REAL NOT NULL DEFAULT 0,revoked INTEGER NOT NULL DEFAULT 0);
             CREATE TABLE IF NOT EXISTS assistant_sessions(
               id TEXT PRIMARY KEY,owner TEXT NOT NULL,scope_ids TEXT NOT NULL,created REAL NOT NULL,
               scope_tasks TEXT NOT NULL DEFAULT '[]');
@@ -108,7 +124,43 @@ class Database:
             """)
             if 'scope_tasks' not in {r['name'] for r in c.execute('PRAGMA table_info(assistant_sessions)')}:
                 c.execute("ALTER TABLE assistant_sessions ADD COLUMN scope_tasks TEXT NOT NULL DEFAULT '[]'")
-            c.execute("INSERT INTO settings VALUES('schema_version','2') ON CONFLICT(key) DO UPDATE SET value='2'")
+            self._ensure_columns(c, 'workflow_runs', {
+                'definition_version': 'INTEGER NOT NULL DEFAULT 1',
+                'context_digest': "TEXT NOT NULL DEFAULT ''",
+            })
+            self._ensure_columns(c, 'workflow_nodes', {
+                'attempts': 'INTEGER NOT NULL DEFAULT 0',
+                'started': 'REAL NOT NULL DEFAULT 0',
+                'finished': 'REAL NOT NULL DEFAULT 0',
+            })
+            self._migrate_agent_jobs(c)
+            c.execute("INSERT INTO settings VALUES('schema_version','3') ON CONFLICT(key) DO UPDATE SET value='3'")
+
+    @staticmethod
+    def _ensure_columns(c, table, columns):
+        existing = {r['name'] for r in c.execute(f'PRAGMA table_info({table})')}
+        for name, kind in columns.items():
+            if name not in existing:
+                c.execute(f'ALTER TABLE {table} ADD COLUMN {name} {kind}')
+
+    @staticmethod
+    def _migrate_agent_jobs(c):
+        if not c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='agent_jobs'").fetchone():
+            return
+        now = time.time()
+        rows = c.execute("SELECT j.run_id,j.state,j.lease_until,j.attempts,r.snapshot FROM agent_jobs j "
+                         "JOIN workflow_runs r ON r.id=j.run_id").fetchall()
+        for row in rows:
+            if row['state'] == 'done':
+                continue
+            state = row['state'] if row['state'] in ('queued', 'running') else 'queued'
+            c.execute("INSERT OR IGNORE INTO jobs(id,kind,job_key,payload,state,priority,run_at,attempts,"
+                      "max_attempts,lease_until,last_error,result,created,updated) "
+                      "VALUES(?,?,?,?,?,100,?,?,3,0,NULL,NULL,?,?)",
+                      (f"JOB-{secrets.token_hex(12)}", 'explanation', row['run_id'],
+                       dumps({'run_id': row['run_id'], 'snapshot': json.loads(row['snapshot'])}),
+                       state, now, row['attempts'], now, now))
+        c.execute('DROP TABLE agent_jobs')
 
     def seed(self):
         now = time.time()
@@ -136,7 +188,7 @@ class Database:
             users += [(f'staff{i}','staff',w[0],None,i) for i,w in enumerate(workers,1)]
             for username,role,name,eid,sid in users:
                 c.execute("INSERT INTO users VALUES(?,?,?,?,?,?)",(username,password_hash('Demo2026!'),role,name,eid,sid))
-            c.execute("INSERT OR IGNORE INTO settings VALUES('schema_version','2')")
+            c.execute("INSERT OR IGNORE INTO settings VALUES('schema_version','3')")
             return True
 
 

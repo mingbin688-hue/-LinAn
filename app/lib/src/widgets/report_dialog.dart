@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../api_client.dart';
 import '../app_state.dart';
 import '../labels.dart';
+import '../models.dart';
 import '../theme.dart';
 
 const List<String> _reportKinds = [
@@ -43,7 +44,7 @@ class _ReportDialogState extends State<_ReportDialog> {
   final _count15 = TextEditingController();
   final _count60 = TextEditingController();
   final _gap = TextEditingController();
-  late int _elderId;
+  int? _elderId;
   String _kind = 'safe';
   bool _saving = false;
   String? _error;
@@ -51,10 +52,31 @@ class _ReportDialogState extends State<_ReportDialog> {
   @override
   void initState() {
     super.initState();
-    _elderId = widget.initialElderId ?? (widget.state.elders.isEmpty ? 1 : widget.state.elders.first.id);
-    if (widget.state.elders.every((e) => e.id != _elderId) && widget.state.elders.isNotEmpty) {
-      _elderId = widget.state.elders.first.id;
+    _elderId = _defaultElderId;
+  }
+
+  /// 默认老人：账号关联档案优先；家属/老人未绑定则留空（不能拿 elders.first 顶替，会 403）。
+  int? get _defaultElderId {
+    final state = widget.state;
+    final user = state.user;
+    final linked = state.elderFor(user);
+    final preferred = widget.initialElderId ?? linked?.id;
+    if (preferred != null && state.elders.any((e) => e.id == preferred)) {
+      return preferred;
     }
+    if (linked != null) return linked.id;
+    if (user?.isCareSide ?? true) return null;
+    return state.elders.isEmpty ? null : state.elders.first.id;
+  }
+
+  /// 下拉选项：列表里没有的关联档案也要补进去，否则 Dropdown 的值不在 items 中会报错。
+  List<Elder> get _elderOptions {
+    final list = List<Elder>.of(widget.state.elders);
+    final linked = widget.state.elderFor(widget.state.user);
+    if (linked != null && list.every((e) => e.id != linked.id)) {
+      list.insert(0, linked);
+    }
+    return list;
   }
 
   @override
@@ -70,6 +92,11 @@ class _ReportDialogState extends State<_ReportDialog> {
   bool get _needsActivity => _kind == 'activity';
 
   Future<void> _submit() async {
+    final elderId = _elderId;
+    if (elderId == null) {
+      setState(() => _error = '请先选择要上报的老人，或联系社区完成档案绑定');
+      return;
+    }
     if (!(_formKey.currentState?.validate() ?? false)) return;
     final payload = <String, dynamic>{};
     if (_needsHours) payload['hours'] = int.parse(_hours.text.trim());
@@ -83,7 +110,7 @@ class _ReportDialogState extends State<_ReportDialog> {
       _error = null;
     });
     try {
-      await widget.state.reportEvent(_elderId, _kind, payload);
+      await widget.state.reportEvent(elderId, _kind, payload);
       if (mounted) Navigator.of(context).pop();
     } on ApiException catch (e) {
       if (mounted) setState(() => _error = e.message);
@@ -96,7 +123,7 @@ class _ReportDialogState extends State<_ReportDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final elders = widget.state.elders;
+    final elders = _elderOptions;
     return Dialog(
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 470),
@@ -127,12 +154,21 @@ class _ReportDialogState extends State<_ReportDialog> {
                 DropdownButtonFormField<int>(
                   initialValue: _elderId,
                   decoration: const InputDecoration(labelText: '老人'),
+                  hint: const Text('尚未绑定老人', style: TextStyle(fontSize: 12)),
                   items: [
                     for (final e in elders)
                       DropdownMenuItem(value: e.id, child: Text('${e.name} · ${e.building}', style: const TextStyle(fontSize: 12))),
                   ],
                   onChanged: (v) => setState(() => _elderId = v ?? _elderId),
                 ),
+                if (_elderId == null)
+                  const Padding(
+                    padding: EdgeInsets.only(top: 6),
+                    child: Text(
+                      '当前账号尚未关联老人档案，请先选择老人或联系社区完成绑定后再上报。',
+                      style: TextStyle(fontSize: 10.5, color: LinanColors.danger, height: 1.5),
+                    ),
+                  ),
                 const SizedBox(height: 12),
                 DropdownButtonFormField<String>(
                   initialValue: _kind,
@@ -210,7 +246,7 @@ class _ReportDialogState extends State<_ReportDialog> {
                     TextButton(onPressed: _saving ? null : () => Navigator.of(context).pop(), child: const Text('取消')),
                     const SizedBox(width: 6),
                     FilledButton(
-                      onPressed: _saving ? null : _submit,
+                      onPressed: (_saving || _elderId == null) ? null : _submit,
                       child: _saving
                           ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 1.6, color: Colors.white))
                           : const Text('提交上报'),

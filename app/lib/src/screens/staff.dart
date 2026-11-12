@@ -58,7 +58,15 @@ class StaffPage extends StatelessWidget {
                       runSpacing: gap,
                       children: [
                         for (final p in rows)
-                          SizedBox(width: width, child: _StaffCard(state: state, staff: p, editable: admin || p.id == state.user?.staffId)),
+                          SizedBox(
+                            width: width,
+                            child: _StaffCard(
+                              key: ValueKey(p.id),
+                              state: state,
+                              staff: p,
+                              editable: admin || p.id == state.user?.staffId,
+                            ),
+                          ),
                       ],
                     );
                   },
@@ -71,15 +79,92 @@ class StaffPage extends StatelessWidget {
   }
 }
 
-class _StaffCard extends StatelessWidget {
+class _StaffCard extends StatefulWidget {
   final AppState state;
   final Staff staff;
   final bool editable;
 
-  const _StaffCard({required this.state, required this.staff, required this.editable});
+  const _StaffCard({super.key, required this.state, required this.staff, required this.editable});
+
+  @override
+  State<_StaffCard> createState() => _StaffCardState();
+}
+
+class _StaffCardState extends State<_StaffCard> {
+  /// 请求进行中：禁用开关与下拉，避免重复 PUT。
+  bool _saving = false;
+
+  /// 乐观状态；null 表示跟随服务端返回的对象。
+  bool? _onDuty;
+  bool? _available;
+  int? _location;
+
+  bool get _duty => _onDuty ?? widget.staff.onDuty;
+  bool get _accepting => _available ?? widget.staff.available;
+  int get _building => _location ?? widget.staff.location;
+
+  @override
+  void didUpdateWidget(covariant _StaffCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // 服务端数据发生变化（轮询、他人修改）时以服务端为准。
+    final changed = widget.staff.onDuty != oldWidget.staff.onDuty ||
+        widget.staff.available != oldWidget.staff.available ||
+        widget.staff.location != oldWidget.staff.location;
+    if (!_saving && changed) {
+      _onDuty = null;
+      _available = null;
+      _location = null;
+    }
+  }
+
+  /// 后端 WorkerUpdate 要求 on_duty / available / location 三字段齐全，
+  /// 因此每次都从当前人员对象合并出完整载荷后整体提交。
+  Future<void> _save({bool? onDuty, bool? available, int? location}) async {
+    if (_saving) return;
+    final nextDuty = onDuty ?? _duty;
+    final nextAccepting = available ?? _accepting;
+    final nextBuilding = location ?? _building;
+    final unchanged = nextDuty == widget.staff.onDuty &&
+        nextAccepting == widget.staff.available &&
+        nextBuilding == widget.staff.location;
+    if (unchanged) return;
+
+    setState(() {
+      _saving = true;
+      _onDuty = nextDuty;
+      _available = nextAccepting;
+      _location = nextBuilding;
+    });
+
+    var ok = false;
+    try {
+      ok = await widget.state.updateStaff(
+        widget.staff.id,
+        onDuty: nextDuty,
+        available: nextAccepting,
+        location: nextBuilding,
+      );
+    } on Object {
+      // updateStaff 约定不抛异常；这里兜底，避免异常导致开关永久禁用。
+      ok = false;
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _saving = false;
+      if (!ok) {
+        // 失败回滚到服务端状态，控件恢复可操作以便重试。
+        _onDuty = null;
+        _available = null;
+        _location = null;
+      }
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
+    final staff = widget.staff;
+    final editable = widget.editable;
     return SectionCard(
       padding: const EdgeInsets.fromLTRB(16, 15, 16, 12),
       child: Column(
@@ -100,11 +185,16 @@ class _StaffCard extends StatelessWidget {
                   children: [
                     Text(staff.name, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: LinanColors.text)),
                     const SizedBox(height: 2),
-                    Text('人员 #${staff.id} · ${staff.location} 号楼',
+                    Text('人员 #${staff.id} · $_building 号楼',
                         style: const TextStyle(fontSize: 9.5, color: LinanColors.muted)),
                   ],
                 ),
               ),
+              if (_saving)
+                const Padding(
+                  padding: EdgeInsets.only(right: 8),
+                  child: SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 1.6)),
+                ),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
                 decoration: BoxDecoration(
@@ -112,7 +202,7 @@ class _StaffCard extends StatelessWidget {
                   borderRadius: BorderRadius.circular(5),
                 ),
                 child: Text(
-                  staff.busy ? '执行中' : (staff.available ? '可接单' : '暂停接单'),
+                  staff.busy ? '执行中' : (_accepting ? '可接单' : '暂停接单'),
                   style: TextStyle(fontSize: 9.5, color: staff.busy ? LinanColors.amber : LinanColors.green, fontWeight: FontWeight.w600),
                 ),
               ),
@@ -129,37 +219,37 @@ class _StaffCard extends StatelessWidget {
             '值班状态',
             editable
                 ? Switch(
-                    value: staff.onDuty,
-                    onChanged: (v) => state.updateStaff(staff.id, {'on_duty': v}),
+                    value: _duty,
+                    onChanged: _saving ? null : (v) => _save(onDuty: v),
                     materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   )
-                : Text(staff.onDuty ? '值班中' : '未值班', style: const TextStyle(fontSize: 11)),
+                : Text(_duty ? '值班中' : '未值班', style: const TextStyle(fontSize: 11)),
           ),
           _line(
             '接受新任务',
             editable
                 ? Switch(
-                    value: staff.available,
-                    onChanged: staff.onDuty ? (v) => state.updateStaff(staff.id, {'available': v}) : null,
+                    value: _accepting,
+                    onChanged: _saving || !_duty ? null : (v) => _save(available: v),
                     materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   )
-                : Text(staff.available ? '可接单' : '暂停', style: const TextStyle(fontSize: 11)),
+                : Text(_accepting ? '可接单' : '暂停', style: const TextStyle(fontSize: 11)),
           ),
           _line(
             '负责楼栋',
             editable
                 ? DropdownButton<int>(
-                    value: staff.location,
+                    value: _building,
                     underline: const SizedBox.shrink(),
                     style: const TextStyle(fontSize: 11, color: LinanColors.text),
                     items: [
                       for (var i = 1; i <= 5; i++) DropdownMenuItem(value: i, child: Text('$i 号楼', style: const TextStyle(fontSize: 11))),
                     ],
-                    onChanged: (v) {
-                      if (v != null) state.updateStaff(staff.id, {'location': v});
+                    onChanged: _saving ? null : (v) {
+                      if (v != null) _save(location: v);
                     },
                   )
-                : Text('${staff.location} 号楼', style: const TextStyle(fontSize: 11)),
+                : Text('$_building 号楼', style: const TextStyle(fontSize: 11)),
           ),
           const Divider(height: 18),
           Row(
@@ -172,12 +262,12 @@ class _StaffCard extends StatelessWidget {
               ),
               if (staff.activeTask != null)
                 TextButton(
-                  onPressed: () => state.selectPage('tasks'),
+                  onPressed: () => widget.state.selectPage('tasks'),
                   child: const Text('查看'),
                 ),
             ],
           ),
-          if (staff.id == state.user?.staffId)
+          if (staff.id == widget.state.user?.staffId)
             Padding(
               padding: const EdgeInsets.only(top: 4),
               child: Text('这是你自己的服务身份；切换状态会立即影响可派单性。',

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart' show VoidCallback;
 import 'package:http/http.dart' as http;
 
 import 'models.dart';
@@ -17,17 +18,27 @@ class ApiException implements Exception {
 }
 
 class ApiClient {
-  ApiClient({String? baseUrl}) : _base = (baseUrl ?? defaultApiBase()).trim();
+  ApiClient({String? baseUrl, http.Client? client, VoidCallback? onUnauthorized})
+      : _base = (baseUrl ?? defaultApiBase()).trim(),
+        _client = client ?? http.Client(),
+        _onUnauthorized = onUnauthorized ?? _noop;
+
+  static void _noop() {}
 
   static const _envBase = String.fromEnvironment('API_BASE');
   static const _timeout = Duration(seconds: 20);
+
+  final http.Client _client;
+
+  /// 任意请求返回 401 时先回调（清会话），再抛 [ApiException]。
+  final VoidCallback _onUnauthorized;
 
   String _base;
   String? token;
 
   String get baseUrl => _base;
 
-  /// 网页端使用同源地址；桌面/移动端默认本机 8765，可在登录页覆盖。
+  /// 桌面端与 Android 客户端默认连接本机 8765，可在登录页覆盖。
   Uri _uri(String path, [Map<String, String>? query]) {
     var origin = _base.isEmpty ? Uri.base.origin : _base;
     if (origin.endsWith('/')) origin = origin.substring(0, origin.length - 1);
@@ -48,6 +59,12 @@ class ApiClient {
         if (token != null) 'Authorization': 'Bearer $token',
       };
 
+  /// 健康信息（规则/模型/数据结构版本）；无需登录即可读取，用于界面显示真实版本。
+  Future<Map<String, dynamic>> health() async {
+    final data = await _send('GET', '/api/health');
+    return data is Map ? Map<String, dynamic>.from(data) : <String, dynamic>{};
+  }
+
   Future<dynamic> _send(
     String method,
     String path, {
@@ -60,11 +77,13 @@ class ApiClient {
       final payload = body == null ? null : jsonEncode(body);
       switch (method) {
         case 'GET':
-          res = await http.get(uri, headers: _headers).timeout(_timeout);
+          res = await _client.get(uri, headers: _headers).timeout(_timeout);
         case 'POST':
-          res = await http.post(uri, headers: _headers, body: payload).timeout(_timeout);
+          res = await _client.post(uri, headers: _headers, body: payload).timeout(_timeout);
         case 'PUT':
-          res = await http.put(uri, headers: _headers, body: payload).timeout(_timeout);
+          res = await _client.put(uri, headers: _headers, body: payload).timeout(_timeout);
+        case 'DELETE':
+          res = await _client.delete(uri, headers: _headers).timeout(_timeout);
         default:
           throw const ApiException(0, '不支持的请求方法');
       }
@@ -87,6 +106,14 @@ class ApiClient {
       }
     }
     if (res.statusCode >= 400) {
+      if (res.statusCode == 401) {
+        // 会话失效：先让上层清掉 token 与用户信息，再按普通错误抛出。
+        try {
+          _onUnauthorized();
+        } catch (_) {
+          // 回调自身出错不应掩盖 401。
+        }
+      }
       String message = '请求失败（${res.statusCode}）';
       if (data is Map && data['detail'] != null) {
         final detail = data['detail'];
@@ -208,4 +235,34 @@ class ApiClient {
 
   Future<WorkflowRun> workflowRun(String id) async =>
       WorkflowRun.fromJson(_map(await _send('GET', '/api/workflows/runs/$id')));
+
+  Future<WorkflowStats> workflowStats() async =>
+      WorkflowStats.fromJson(_map(await _send('GET', '/api/workflows/stats')));
+
+  Future<List<WorkflowJob>> workflowJobs({String state = 'all', int limit = 50}) async =>
+      _list(await _send('GET', '/api/workflows/jobs', query: {'state': state, 'limit': '$limit'}))
+          .map(WorkflowJob.fromJson)
+          .toList();
+
+  Future<Map<String, dynamic>> retryJob(String id) async =>
+      _map(await _send('POST', '/api/workflows/jobs/$id/retry'));
+
+  Future<Map<String, dynamic>> cancelJob(String id) async =>
+      _map(await _send('POST', '/api/workflows/jobs/$id/cancel'));
+
+  Future<Map<String, dynamic>> retryRun(String id) async =>
+      _map(await _send('POST', '/api/workflows/runs/$id/retry'));
+
+  Future<McpStatus> mcpStatus() async => McpStatus.fromJson(_map(await _send('GET', '/api/mcp/status')));
+
+  Future<IssuedMcpToken> createMcpToken({required String label, required int expiresHours}) async =>
+      IssuedMcpToken.fromJson(_map(await _send(
+        'POST',
+        '/api/mcp/tokens',
+        body: {'label': label, 'expires_hours': expiresHours},
+      )));
+
+  Future<void> revokeMcpToken(String id) async {
+    await _send('DELETE', '/api/mcp/tokens/$id');
+  }
 }

@@ -455,15 +455,52 @@ class _ActionDialogState extends State<_ActionDialog> {
   }
 }
 
-class _TaskDetailBody extends StatelessWidget {
+class _TaskDetailBody extends StatefulWidget {
   final AppState state;
   final String taskId;
   const _TaskDetailBody({required this.state, required this.taskId});
 
   @override
+  State<_TaskDetailBody> createState() => _TaskDetailBodyState();
+}
+
+class _TaskDetailBodyState extends State<_TaskDetailBody> {
+  /// 详情只在进入面板、任务切换或手动刷新时请求；写在 build 里会每次重建都重新 GET。
+  late Future<TaskDetail> _future;
+
+  @override
+  void initState() {
+    super.initState();
+    _future = widget.state.taskDetail(widget.taskId);
+  }
+
+  @override
+  void didUpdateWidget(covariant _TaskDetailBody oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // 任务 id 变化时重建 Future（不调用 setState，随后的 build 会使用新 Future）。
+    if (oldWidget.taskId != widget.taskId) {
+      _future = widget.state.taskDetail(widget.taskId);
+    }
+  }
+
+  void _reload() {
+    setState(() => _future = widget.state.taskDetail(widget.taskId));
+  }
+
+  Widget _refreshButton() => IconButton(
+        onPressed: _reload,
+        icon: const Icon(Icons.refresh, size: 15),
+        color: LinanColors.muted,
+        tooltip: '重新读取详情',
+        visualDensity: VisualDensity.compact,
+        padding: EdgeInsets.zero,
+        constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
+      );
+
+  @override
   Widget build(BuildContext context) {
     return FutureBuilder<TaskDetail>(
-      future: state.taskDetail(taskId),
+      future: _future,
       builder: (context, snap) {
         if (snap.connectionState != ConnectionState.done) {
           return const Padding(
@@ -472,7 +509,13 @@ class _TaskDetailBody extends StatelessWidget {
           );
         }
         if (snap.hasError) {
-          return EmptyHint('${snap.error}', icon: Icons.error_outline);
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Align(alignment: Alignment.centerRight, child: _refreshButton()),
+              EmptyHint('${snap.error}', icon: Icons.error_outline),
+            ],
+          );
         }
         final d = snap.data;
         if (d == null) return const EmptyHint('没有任务详情');
@@ -489,6 +532,7 @@ class _TaskDetailBody extends StatelessWidget {
                 Tag(skillName(t.requiredSkill)),
                 const Spacer(),
                 if (t.overdue) const Tag('已超时', color: LinanColors.danger),
+                _refreshButton(),
               ],
             ),
             const SizedBox(height: 14),
@@ -553,29 +597,7 @@ class _TaskDetailBody extends StatelessWidget {
                 ),
             const Divider(height: 24),
             const _SectionLabel('审计时间线'),
-            for (final a in d.audit.reversed)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.only(top: 4),
-                      child: Dot(a['action'] == 'task_close' ? LinanColors.green : LinanColors.border, size: 6),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        '${auditName(a['action'])}${('${a['note'] ?? ''}').isEmpty ? '' : ' · ${a['note']}'}',
-                        style: const TextStyle(fontSize: 11, height: 1.55),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Text(formatStamp(a['created'] is num ? a['created'] as num : null),
-                        style: const TextStyle(fontSize: 9, color: LinanColors.faint)),
-                  ],
-                ),
-              ),
+            for (final a in d.audit.reversed) _auditRow(a),
             if (d.agentRuns.isNotEmpty) ...[
               const Divider(height: 24),
               const _SectionLabel('Agent 运行记录'),
@@ -611,9 +633,73 @@ class _TaskDetailBody extends StatelessWidget {
       },
     );
   }
+
+  /// 审计行：action 中文名 + payload 关键字段；没有可读字段时退回操作者与时间。
+  Widget _auditRow(Map<String, dynamic> a) {
+    final detail = auditDetail(a);
+    final actor = auditActor(a['actor']);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Dot(a['action'] == 'task_close' ? LinanColors.green : LinanColors.border, size: 6),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              detail.isEmpty ? '${auditName(a['action'])} · $actor' : '${auditName(a['action'])} · $detail',
+              style: const TextStyle(fontSize: 11, height: 1.55),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(formatStamp(a['created'] is num ? a['created'] as num : null),
+              style: const TextStyle(fontSize: 9, color: LinanColors.faint)),
+        ],
+      ),
+    );
+  }
 }
 
 String auditName(dynamic action) => auditNames['$action'] ?? '$action';
+
+/// audit 表没有 note 列，关键说明在 payload 里；按可读性挑出有内容的字段。
+String auditDetail(Map<String, dynamic> row) {
+  final payload = row['payload'];
+  if (payload is! Map) return '';
+  final parts = <String>[];
+
+  final note = '${payload['note'] ?? ''}'.trim();
+  if (note.isNotEmpty) parts.add(note);
+
+  final reason = '${payload['adjustment_reason'] ?? ''}'.trim();
+  if (reason.isNotEmpty) parts.add('调整原因：$reason');
+
+  final outcome = '${payload['outcome'] ?? ''}'.trim();
+  if (outcome.isNotEmpty) parts.add('结论：${outcomeName(outcome)}');
+
+  final after = '${payload['after'] ?? ''}'.trim();
+  if (after.isNotEmpty) parts.add('状态转至${stateName(after)}');
+
+  final level = payload['level'];
+  if (level is num) parts.add(levelName(level.toInt()));
+
+  final kind = '${payload['kind'] ?? ''}'.trim();
+  if (kind.isNotEmpty) parts.add(kindName(kind));
+
+  final chosen = payload['chosen_staff'];
+  if (chosen != null) parts.add('负责人 #$chosen');
+
+  return parts.join(' · ');
+}
+
+String auditActor(dynamic actor) {
+  final name = '${actor ?? ''}'.trim();
+  if (name.isEmpty) return '系统';
+  return name == 'system' ? '系统' : name;
+}
 
 class _SectionLabel extends StatelessWidget {
   final String text;
@@ -756,8 +842,10 @@ class _RecommendDialogState extends State<_RecommendDialog> {
     final task = s.taskById(r.taskId);
     final chosen = _staffChoice[r.id] ?? r.staffId;
     final changed = chosen != r.staffId;
-    final candidates = s.staff.where((p) => p.onDuty && p.available).toList();
+    final candidates =
+        s.staff.where((p) => p.onDuty && p.available && !p.busy).toList();
     if (!candidates.any((p) => p.id == chosen)) {
+      // 推荐结果里的人员可能刚变得不可派单；保留为选项，避免下拉值与 item 列表不一致。
       final current = s.staffById(chosen);
       if (current != null) candidates.add(current);
     }

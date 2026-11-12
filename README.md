@@ -6,9 +6,9 @@
 ![License](https://img.shields.io/badge/license-Apache--2.0-blue)
 ![Flutter](https://img.shields.io/badge/Flutter-3.47.9-02569B?logo=flutter&logoColor=white)
 ![Python](https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white)
-![Tests](https://img.shields.io/badge/backend%20tests-56%20passed-brightgreen)
+![Tests](https://img.shields.io/badge/backend%20tests-70%20passed-brightgreen)
 
-跑通 **状态上报 → 异常识别 → 风险分级 → 人员推荐 → 自动或人工确认派单 → 处置反馈 → 人工复核关闭** 的完整闭环，并在风险引擎与调度状态机之上提供四类业务 Agent、四角色对话助手和可追踪的工作流中心。
+跑通 **状态上报 → 异常识别 → 风险分级 → 人员推荐 → 自动或人工确认派单 → 处置反馈 → 人工复核关闭** 的完整闭环，并在风险引擎与调度状态机之上提供四类业务 Agent、四角色对话助手、可追踪的工作流中心、带租约与死信的持久化任务队列、角色作用域上下文封装和只读 MCP 服务。
 
 | 守护总览 | 任务中心 |
 |---|---|
@@ -82,7 +82,7 @@ Android 调试需要模拟器或真机：`flutter run -d <device-id>`，客户�
 powershell -ExecutionPolicy Bypass -File ./Verify.ps1 -FlutterExecutable "E:/tools/flutter/bin/flutter.bat"
 ```
 
-依次执行后端 `pytest`、`flutter analyze`、`flutter test` 与 Windows Release 构建。2026-11-11 实测：后端 **56 passed**、`flutter analyze` 无问题、`flutter test` 1 passed、Windows 构建通过；管理员/照护/家属/老人四角色客户端闭环与权限边界均通过。详细记录、截图与已知限制见 [验证说明](docs/VERIFICATION.md)，实验数据见 [实验报告](docs/EXPERIMENT_REPORT.md)。
+依次执行后端 `pytest`、`flutter analyze`、`flutter test` 与 Windows Release 构建。2026-11-12 实测：后端 **70 passed**、`flutter analyze` 无问题、`flutter test` 4 passed、Windows 构建通过；管理员/照护/家属/老人四角色客户端闭环与权限边界均通过。详细记录、截图与已知限制见 [验证说明](docs/VERIFICATION.md)，本轮审计与修复清单见 [审计记录](docs/AUDIT_2026-11-12.md)，实验数据见 [实验报告](docs/EXPERIMENT_REPORT.md)。
 
 ## 数据与已知局限
 
@@ -110,26 +110,26 @@ powershell -ExecutionPolicy Bypass -File ./Verify.ps1 -FlutterExecutable "E:/too
 | 照护人员（4 页） | 我的任务、服务对象、我的状态、邻安助手 |
 | 家属 / 老人（3 页） | 安心守护、状态记录、邻安助手 |
 
-助手回答附带业务记录引用（老人、事件、任务），点击可跳转；工作流中心展示自动派单开关、三类流程图、Agent 目录与每次运行的全部节点、模式、耗时和输入输出。
+助手回答附带业务记录引用（老人、事件、任务）和上下文摘要（预算、脱敏、缺口、工具调用），点击引用可跳转；工作流中心展示自动派单开关、三类流程图、Agent 目录、每次运行的节点与定义版本，以及持久化任务队列和只读 MCP 接入状态。
 
 ## 文件结构
 
 | 位置 | 内容 |
 |---|---|
-| `backend/` | 鉴权、SQLite、风险引擎、调度、Agent/工作流、实验与回放 |
+| `backend/` | 应用工厂 `api.py`、`routes/` 六个路由模块、`schemas.py`/`deps.py`/`session.py`/`serializers.py` 公共层，以及风险引擎、调度、Agent/工作流、实验与回放 |
 | `app/lib/src/` | Flutter 页面、状态层、API 客户端、模型、主题与组件 |
 | `app/windows/`、`app/android/` | 原生平台工程与构建配置 |
 | `app/build/windows/x64/runner/Release/` | Windows 客户端构建产物（本地生成，不进仓库） |
 | `app/build/app/outputs/flutter-apk/` | Android 安装包（本地生成，不进仓库） |
 | `scripts/` | 数据流水线、实验、离线训练、源码打包 |
-| `tests/` | 后端测试（56 项） |
+| `tests/` | 后端测试（70 项）与 `app/test/` 客户端契约测试（3 项） |
 | `data/` | 标准化窗口、来源清单、实际实验结果 |
 | `docs/` | 用户手册、Agent 说明、实验报告、验证记录与截图 |
 | `runtime/` | 首次启动生成的数据库、日志、验证结果（不进源码包） |
 
 ## 接口摘要
 
-`POST /api/auth/login`、`GET /api/elders`、`POST /api/events`、`GET /api/incidents`、`GET /api/tasks`、`POST /api/dispatch/recommend`、`POST /api/dispatch/confirm`、`POST /api/tasks/{id}/action`、`GET /api/staff`、`POST /api/assistant/messages`、`GET/PUT /api/workflows/settings`、`GET /api/workflows/runs`、`POST /api/experiments/run`、`POST /api/replay/window`、`GET /api/feedback/export`。
+`POST /api/auth/login`、`GET /api/elders`、`POST /api/events`、`GET /api/incidents`、`GET /api/tasks`、`POST /api/dispatch/recommend`、`POST /api/dispatch/confirm`、`POST /api/tasks/{id}/action`、`GET /api/staff`、`POST /api/assistant/messages`、`GET/PUT /api/workflows/settings`、`GET /api/workflows/runs`、`GET /api/workflows/stats`、`GET /api/workflows/jobs`、`POST /api/workflows/jobs/{id}/retry|cancel`、`POST /api/workflows/runs/{id}/retry`、`POST /mcp`、`GET /api/mcp/status`、`POST /api/mcp/tokens`、`DELETE /api/mcp/tokens/{id}`、`POST /api/demo/scenario`、`POST /api/experiments/run`、`POST /api/replay/window`、`GET /api/feedback/export`、`GET /api/agents`、`GET /api/assistant/sessions/{id}`、`GET /api/health`、`GET /api/notifications`。
 
 接口使用 Bearer 令牌与服务端角色、对象范围校验。SQLite 写入使用 `BEGIN IMMEDIATE`，部分唯一索引保证一人只占用一项执行任务；事件按 ID 去重，历史事件保留但不覆盖更新的当前状态，重启后继续扫描超时。
 
@@ -151,6 +151,7 @@ powershell -ExecutionPolicy Bypass -File ./Verify.ps1 -Package
 
 - [用户手册与六分钟演示脚本](docs/USER_MANUAL.md)
 - [Agent、助手与工作流](docs/AGENT_WORKFLOWS.md)
+- [MCP 接入](docs/MCP.md)
 - [实验报告](docs/EXPERIMENT_REPORT.md)
 - [验证记录](docs/VERIFICATION.md)
 

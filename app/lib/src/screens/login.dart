@@ -101,135 +101,179 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Widget _form(BuildContext context) {
+    final bootError = widget.state.bootError?.trim() ?? '';
     return Container(
       constraints: const BoxConstraints(maxWidth: 396),
       margin: const EdgeInsets.all(28),
-      padding: const EdgeInsets.fromLTRB(28, 26, 28, 24),
-      decoration: BoxDecoration(
-        color: LinanColors.surface,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: LinanColors.border),
-        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: .04), blurRadius: 26, offset: const Offset(0, 10))],
-      ),
-      child: Form(
-        key: _formKey,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const Text('登录邻安', style: TextStyle(fontSize: 21, fontWeight: FontWeight.w600, color: LinanColors.text)),
-            const SizedBox(height: 5),
-            const Text('用演示账号进入守护台，所有档案均为虚拟数据。', style: TextStyle(fontSize: 11, color: LinanColors.muted, height: 1.6)),
-            const SizedBox(height: 22),
-            const _FieldLabel('账号'),
-            TextFormField(
-              controller: _user,
-              style: const TextStyle(fontSize: 12.5),
-              decoration: const InputDecoration(prefixIcon: Icon(Icons.person_outline, size: 16), hintText: '例如 admin'),
-              validator: (v) => (v == null || v.trim().isEmpty) ? '请输入账号' : null,
-              textInputAction: TextInputAction.next,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (bootError.isNotEmpty) ...[
+            _BootErrorBar(message: bootError),
+            const SizedBox(height: 12),
+          ],
+          Container(
+            padding: const EdgeInsets.fromLTRB(28, 26, 28, 24),
+            decoration: BoxDecoration(
+              color: LinanColors.surface,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: LinanColors.border),
+              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: .04), blurRadius: 26, offset: const Offset(0, 10))],
             ),
-            const SizedBox(height: 14),
-            const _FieldLabel('密码'),
-            TextFormField(
-              controller: _pass,
-              obscureText: _obscure,
-              style: const TextStyle(fontSize: 12.5),
-              decoration: InputDecoration(
-                prefixIcon: const Icon(Icons.lock_outline, size: 15),
-                hintText: '演示密码已预填',
-                suffixIcon: IconButton(
-                  onPressed: () => setState(() => _obscure = !_obscure),
-                  icon: Icon(_obscure ? Icons.visibility_off_outlined : Icons.visibility_outlined, size: 15),
-                  color: LinanColors.faint,
-                ),
-              ),
-              validator: (v) => (v == null || v.isEmpty) ? '请输入密码' : null,
-              onFieldSubmitted: (_) => _submit(),
-            ),
-            if (_error != null) ...[
-              const SizedBox(height: 12),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                decoration: BoxDecoration(
-                  color: LinanColors.danger.withValues(alpha: .07),
-                  borderRadius: BorderRadius.circular(7),
-                  border: Border.all(color: LinanColors.danger.withValues(alpha: .18)),
-                ),
-                child: Text(_error!, style: const TextStyle(fontSize: 11, color: LinanColors.danger, height: 1.5)),
-              ),
-            ],
-            const SizedBox(height: 18),
-            FilledButton(
-              onPressed: _submitting ? null : _submit,
-              style: FilledButton.styleFrom(minimumSize: const Size(0, 44)),
-              child: _submitting
-                  ? const SizedBox(width: 15, height: 15, child: CircularProgressIndicator(strokeWidth: 1.8, color: Colors.white))
-                  : const Text('进入守护台', style: TextStyle(fontSize: 13)),
-            ),
-            const SizedBox(height: 18),
-            Row(
-              children: [
-                const Expanded(child: Divider()),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                  child: Text('快速体验身份', style: TextStyle(fontSize: 9.5, color: LinanColors.faint)),
-                ),
-                const Expanded(child: Divider()),
-              ],
-            ),
-            const SizedBox(height: 11),
-            Wrap(
-              spacing: 7,
-              runSpacing: 7,
-              children: [
-                for (final item in const [
-                  ('admin', '管理员'),
-                  ('staff1', '照护人员'),
-                  ('family', '家属'),
-                  ('elder', '老人'),
-                ])
-                  ActionChip(
-                    label: Text(item.$2, style: const TextStyle(fontSize: 10.5)),
-                    onPressed: _submitting ? null : () => _quick(item.$1),
-                    backgroundColor: _user.text == item.$1 ? LinanColors.primarySoft : Colors.white,
-                    side: BorderSide(color: _user.text == item.$1 ? LinanColors.primary.withValues(alpha: .35) : LinanColors.border),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(7)),
-                    visualDensity: VisualDensity.compact,
-                  ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: TextButton.icon(
-                onPressed: () => setState(() => _serverOpen = !_serverOpen),
-                icon: const Icon(Icons.dns_outlined, size: 13),
-                label: const Text('服务器地址'),
-                style: TextButton.styleFrom(padding: EdgeInsets.zero, minimumSize: const Size(0, 30)),
-              ),
-            ),
-            if (_serverOpen) ...[
-              TextField(
-                controller: _server,
-                style: const TextStyle(fontSize: 11.5),
-                decoration: const InputDecoration(hintText: 'https://your-host 或留空使用同源'),
-              ),
-              const SizedBox(height: 6),
-              Row(
+            child: Form(
+              key: _formKey,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  const Expanded(
-                    child: Text('网页端可留空；桌面端默认 http://127.0.0.1:8765',
-                        style: TextStyle(fontSize: 9.5, color: LinanColors.faint, height: 1.5)),
+                  const Text('登录邻安', style: TextStyle(fontSize: 21, fontWeight: FontWeight.w600, color: LinanColors.text)),
+                  const SizedBox(height: 5),
+                  const Text('用演示账号进入守护台，所有档案均为虚拟数据。', style: TextStyle(fontSize: 11, color: LinanColors.muted, height: 1.6)),
+                  const SizedBox(height: 22),
+                  const _FieldLabel('账号'),
+                  TextFormField(
+                    controller: _user,
+                    style: const TextStyle(fontSize: 12.5),
+                    decoration: const InputDecoration(prefixIcon: Icon(Icons.person_outline, size: 16), hintText: '例如 admin'),
+                    validator: (v) => (v == null || v.trim().isEmpty) ? '请输入账号' : null,
+                    textInputAction: TextInputAction.next,
                   ),
-                  TextButton(onPressed: _saveServer, child: const Text('保存')),
+                  const SizedBox(height: 14),
+                  const _FieldLabel('密码'),
+                  TextFormField(
+                    controller: _pass,
+                    obscureText: _obscure,
+                    style: const TextStyle(fontSize: 12.5),
+                    decoration: InputDecoration(
+                      prefixIcon: const Icon(Icons.lock_outline, size: 15),
+                      hintText: '演示密码已预填',
+                      suffixIcon: IconButton(
+                        onPressed: () => setState(() => _obscure = !_obscure),
+                        icon: Icon(_obscure ? Icons.visibility_off_outlined : Icons.visibility_outlined, size: 15),
+                        color: LinanColors.faint,
+                      ),
+                    ),
+                    validator: (v) => (v == null || v.isEmpty) ? '请输入密码' : null,
+                    onFieldSubmitted: (_) => _submit(),
+                  ),
+                  if (_error != null) ...[
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: LinanColors.danger.withValues(alpha: .07),
+                        borderRadius: BorderRadius.circular(7),
+                        border: Border.all(color: LinanColors.danger.withValues(alpha: .18)),
+                      ),
+                      child: Text(_error!, style: const TextStyle(fontSize: 11, color: LinanColors.danger, height: 1.5)),
+                    ),
+                  ],
+                  const SizedBox(height: 18),
+                  FilledButton(
+                    onPressed: _submitting ? null : _submit,
+                    style: FilledButton.styleFrom(minimumSize: const Size(0, 44)),
+                    child: _submitting
+                        ? const SizedBox(width: 15, height: 15, child: CircularProgressIndicator(strokeWidth: 1.8, color: Colors.white))
+                        : const Text('进入守护台', style: TextStyle(fontSize: 13)),
+                  ),
+                  const SizedBox(height: 18),
+                  Row(
+                    children: [
+                      const Expanded(child: Divider()),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        child: Text('快速体验身份', style: TextStyle(fontSize: 9.5, color: LinanColors.faint)),
+                      ),
+                      const Expanded(child: Divider()),
+                    ],
+                  ),
+                  const SizedBox(height: 11),
+                  Wrap(
+                    spacing: 7,
+                    runSpacing: 7,
+                    children: [
+                      for (final item in const [
+                        ('admin', '管理员'),
+                        ('staff1', '照护人员'),
+                        ('family', '家属'),
+                        ('elder', '老人'),
+                      ])
+                        ActionChip(
+                          label: Text(item.$2, style: const TextStyle(fontSize: 10.5)),
+                          onPressed: _submitting ? null : () => _quick(item.$1),
+                          backgroundColor: _user.text == item.$1 ? LinanColors.primarySoft : Colors.white,
+                          side: BorderSide(color: _user.text == item.$1 ? LinanColors.primary.withValues(alpha: .35) : LinanColors.border),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(7)),
+                          visualDensity: VisualDensity.compact,
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton.icon(
+                      onPressed: () => setState(() => _serverOpen = !_serverOpen),
+                      icon: const Icon(Icons.dns_outlined, size: 13),
+                      label: const Text('服务器地址'),
+                      style: TextButton.styleFrom(padding: EdgeInsets.zero, minimumSize: const Size(0, 30)),
+                    ),
+                  ),
+                  if (_serverOpen) ...[
+                    TextField(
+                      controller: _server,
+                      style: const TextStyle(fontSize: 11.5),
+                      decoration: const InputDecoration(hintText: 'https://your-host 或留空使用默认地址'),
+                    ),
+                    const SizedBox(height: 6),
+                    Row(
+                      children: [
+                        const Expanded(
+                          child: Text('留空使用默认地址；桌面端默认 http://127.0.0.1:8765',
+                              style: TextStyle(fontSize: 9.5, color: LinanColors.faint, height: 1.5)),
+                        ),
+                        TextButton(onPressed: _saveServer, child: const Text('保存')),
+                      ],
+                    ),
+                  ],
+                  const SizedBox(height: 10),
+                  const Text('演示提示：同一虚拟社区内，家属只能查看关联老人，照护人员只能处理自己的任务。',
+                      style: TextStyle(fontSize: 9.5, color: LinanColors.faint, height: 1.6)),
                 ],
               ),
-            ],
-            const SizedBox(height: 10),
-            const Text('演示提示：同一虚拟社区内，家属只能查看关联老人，照护人员只能处理自己的任务。',
-                style: TextStyle(fontSize: 9.5, color: LinanColors.faint, height: 1.6)),
-          ],
-        ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 启动阶段（如后端不可达、会话失效）留下的错误提示，登录成功后由 AppState 清空。
+class _BootErrorBar extends StatelessWidget {
+  final String message;
+  const _BootErrorBar({required this.message});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: LinanColors.danger.withValues(alpha: .07),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: LinanColors.danger.withValues(alpha: .22)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Padding(
+            padding: EdgeInsets.only(top: 1),
+            child: Icon(Icons.cloud_off_outlined, size: 15, color: LinanColors.danger),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(message, style: const TextStyle(fontSize: 11, color: LinanColors.danger, height: 1.5)),
+          ),
+        ],
       ),
     );
   }

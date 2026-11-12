@@ -5,5 +5,3 @@ String defaultApiBase() {
   if (defaultTargetPlatform == TargetPlatform.android) return 'http://10.0.2.2:8765';
   return 'http://127.0.0.1:8765';
 }
-
-const String defaultBaseFallback = 'http://127.0.0.1:8765';

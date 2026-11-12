@@ -67,7 +67,6 @@ def windows(path):
     times.sort()
     if not times:
         raise ValueError('未找到有效运动传感器ON事件。要求：日期 时间 Mxxx ON [可选活动标签]')
-    start=int(times[0]//86400)*86400  # Align below at local midnight to preserve whole-day splits.
     first=datetime.fromtimestamp(times[0],TZ).replace(hour=0,minute=0,second=0,microsecond=0).timestamp()
     last=datetime.fromtimestamp(times[-1],TZ).replace(hour=0,minute=0,second=0,microsecond=0).timestamp()
     rows=[]

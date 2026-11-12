@@ -28,6 +28,25 @@ class _ShellScreenState extends State<ShellScreen> {
 
   AppState get s => widget.state;
 
+  @override
+  void initState() {
+    super.initState();
+    s.addListener(_onStateChanged);
+  }
+
+  @override
+  void dispose() {
+    s.removeListener(_onStateChanged);
+    super.dispose();
+  }
+
+  /// 会话失效或退出登录后，本页会被登录页替换；先关掉仍打开的详情弹窗/侧滑，
+  /// 避免遮罩挡在登录页上。
+  void _onStateChanged() {
+    if (!mounted || s.user != null) return;
+    Navigator.of(context).popUntil((route) => route.isFirst);
+  }
+
   List<Widget> _pages() {
     final role = s.user!.role;
     if (role == 'admin') {

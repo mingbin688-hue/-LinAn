@@ -1,5 +1,3 @@
-import 'dart:math' as math;
-
 int _i(dynamic v, [int d = 0]) => v is num ? v.toInt() : d;
 double _d(dynamic v, [double d = 0]) => v is num ? v.toDouble() : d;
 bool _b(dynamic v) => v == true || v == 1;
@@ -93,22 +91,6 @@ class Elder {
         latestIncident: json['latest_incident'] == null ? null : _s(json['latest_incident']),
         version: _d(json['version']),
         events: (json['events'] as List? ?? const []).map((e) => _m(e)).toList(),
-      );
-
-  Elder withEvents(List<Map<String, dynamic>> rows) => Elder(
-        id: id,
-        name: name,
-        age: age,
-        building: building,
-        contact: contact,
-        profile: profile,
-        state: state,
-        level: level,
-        dataUnknown: dataUnknown,
-        incidentCount: incidentCount,
-        latestIncident: latestIncident,
-        version: version,
-        events: rows,
       );
 
   int get historyDays => _i(profile['history_days']);
@@ -329,6 +311,9 @@ class RunNode {
   final String mode;
   final String status;
   final int elapsedMs;
+  final int attempts;
+  final int? started;
+  final int? finished;
   final Map<String, dynamic> input;
   final Map<String, dynamic> output;
   final String error;
@@ -340,6 +325,9 @@ class RunNode {
     required this.mode,
     required this.status,
     required this.elapsedMs,
+    this.attempts = 0,
+    this.started,
+    this.finished,
     required this.input,
     required this.output,
     required this.error,
@@ -352,6 +340,9 @@ class RunNode {
         mode: _s(json['mode']),
         status: _s(json['status']),
         elapsedMs: _i(json['elapsed_ms']),
+        attempts: _i(json['attempts']),
+        started: _i(json['started']) > 0 ? _i(json['started']) : null,
+        finished: _i(json['finished']) > 0 ? _i(json['finished']) : null,
         input: _m(json['input']),
         output: _m(json['output']),
         error: _s(json['error']),
@@ -361,6 +352,47 @@ class RunNode {
   List<String> get actions => _ls(output['actions']);
   List<String> get evidence => _ls(output['evidence']);
   String get fallbackReason => _s(output['fallback_reason']);
+}
+
+/// 运行定义里的编排节点（新接口 `definition.nodes`）。
+class DefinitionNode {
+  final String key;
+  final String name;
+  final String agent;
+
+  const DefinitionNode({required this.key, required this.name, required this.agent});
+
+  factory DefinitionNode.fromJson(Map<String, dynamic> json) => DefinitionNode(
+        key: _s(json['key']),
+        name: _s(json['name'], _s(json['key'])),
+        agent: _s(json['agent']),
+      );
+}
+
+/// 运行引用的编排定义版本，旧服务可能不下发。
+class WorkflowDefinition {
+  final int version;
+  final String title;
+  final List<DefinitionNode> nodes;
+
+  const WorkflowDefinition({
+    required this.version,
+    required this.title,
+    this.nodes = const [],
+  });
+
+  factory WorkflowDefinition.fromJson(Map<String, dynamic> json) => WorkflowDefinition(
+        version: _i(json['version']),
+        title: _s(json['title']),
+        nodes: (json['nodes'] as List? ?? const []).map((e) => DefinitionNode.fromJson(_m(e))).toList(),
+      );
+
+  static WorkflowDefinition? tryParse(dynamic v) {
+    if (v is! Map) return null;
+    final map = Map<String, dynamic>.from(v);
+    if (map.isEmpty) return null;
+    return WorkflowDefinition.fromJson(map);
+  }
 }
 
 class WorkflowRun {
@@ -374,6 +406,7 @@ class WorkflowRun {
   final int created;
   final int updated;
   final List<RunNode> nodes;
+  final WorkflowDefinition? definition;
   final bool historical;
   final int snapshotVersion;
 
@@ -388,9 +421,13 @@ class WorkflowRun {
     required this.created,
     required this.updated,
     this.nodes = const [],
+    this.definition,
     this.historical = false,
     this.snapshotVersion = 0,
   });
+
+  /// 后端允许 failed / dead / cancelled 的运行与任务重试。
+  bool get retryable => status == 'failed' || status == 'dead' || status == 'cancelled';
 
   factory WorkflowRun.fromJson(Map<String, dynamic> json) => WorkflowRun(
         id: _s(json['id']),
@@ -403,9 +440,90 @@ class WorkflowRun {
         created: _i(json['created']),
         updated: _i(json['updated']),
         nodes: (json['nodes'] as List? ?? const []).map((e) => RunNode.fromJson(_m(e))).toList(),
+        definition: WorkflowDefinition.tryParse(json['definition']),
         historical: _b(json['historical']),
         snapshotVersion: _i(json['snapshot_version']),
       );
+}
+
+/// 助手上下文的单个分区（身份与范围、风险事件……）。
+class ContextSection {
+  final String key;
+  final String title;
+  final int records;
+  final int chars;
+
+  const ContextSection({required this.key, required this.title, required this.records, required this.chars});
+
+  factory ContextSection.fromJson(Map<String, dynamic> json) => ContextSection(
+        key: _s(json['key']),
+        title: _s(json['title'], _s(json['key'])),
+        records: _i(json['records']),
+        chars: _i(json['chars']),
+      );
+}
+
+/// 一次受限工具查询的记录数。
+class ContextTool {
+  final String query;
+  final int? elderId;
+  final String? taskId;
+  final int records;
+
+  const ContextTool({required this.query, required this.elderId, required this.taskId, required this.records});
+
+  factory ContextTool.fromJson(Map<String, dynamic> json) => ContextTool(
+        query: _s(json['query']),
+        elderId: json['elder_id'] == null ? null : _i(json['elder_id']),
+        taskId: json['task_id'] == null ? null : _s(json['task_id']),
+        records: _i(json['records']),
+      );
+}
+
+/// 助手回复附带的上下文摘要；旧服务不返回时保持 null。
+class ContextSummary {
+  final String fingerprint;
+  final int chars;
+  final int budget;
+  final bool truncated;
+  final List<ContextSection> sections;
+  final int redactions;
+  final List<String> redactionRules;
+  final List<String> gaps;
+  final List<ContextTool> tools;
+
+  const ContextSummary({
+    required this.fingerprint,
+    required this.chars,
+    required this.budget,
+    required this.truncated,
+    this.sections = const [],
+    this.redactions = 0,
+    this.redactionRules = const [],
+    this.gaps = const [],
+    this.tools = const [],
+  });
+
+  factory ContextSummary.fromJson(Map<String, dynamic> json) => ContextSummary(
+        fingerprint: _s(json['fingerprint']),
+        chars: _i(json['chars']),
+        budget: _i(json['budget']),
+        truncated: _b(json['truncated']),
+        sections: (json['sections'] as List? ?? const []).map((e) => ContextSection.fromJson(_m(e))).toList(),
+        redactions: _i(json['redactions']),
+        redactionRules: _ls(json['redaction_rules']),
+        gaps: _ls(json['gaps']),
+        tools: (json['tools'] as List? ?? const []).map((e) => ContextTool.fromJson(_m(e))).toList(),
+      );
+
+  bool get hasDetails => sections.isNotEmpty || gaps.isNotEmpty || redactionRules.isNotEmpty || tools.isNotEmpty;
+
+  static ContextSummary? tryParse(dynamic v) {
+    if (v is! Map) return null;
+    final map = Map<String, dynamic>.from(v);
+    if (map.isEmpty) return null;
+    return ContextSummary.fromJson(map);
+  }
 }
 
 class AssistantReply {
@@ -415,6 +533,7 @@ class AssistantReply {
   final String? runId;
   final String sessionId;
   final String fallbackReason;
+  final ContextSummary? context;
 
   const AssistantReply({
     required this.reply,
@@ -423,6 +542,7 @@ class AssistantReply {
     required this.runId,
     required this.sessionId,
     required this.fallbackReason,
+    this.context,
   });
 
   factory AssistantReply.fromJson(Map<String, dynamic> json) => AssistantReply(
@@ -432,6 +552,7 @@ class AssistantReply {
         runId: json['run_id'] == null ? null : _s(json['run_id']),
         sessionId: _s(json['session_id']),
         fallbackReason: _s(json['fallback_reason']),
+        context: ContextSummary.tryParse(json['context']),
       );
 }
 
@@ -456,6 +577,208 @@ class TaskDetail {
       );
 }
 
+/// 持久化任务队列中的一条任务（解释生成等）。
+class WorkflowJob {
+  final String id;
+  final String kind;
+  final String key;
+  final String state;
+  final int attempts;
+  final int maxAttempts;
+  final int priority;
+  final double runAt;
+  final double leaseUntil;
+  final String lastError;
+  final int created;
+  final int updated;
+
+  const WorkflowJob({
+    required this.id,
+    required this.kind,
+    required this.key,
+    required this.state,
+    required this.attempts,
+    required this.maxAttempts,
+    required this.priority,
+    required this.runAt,
+    required this.leaseUntil,
+    required this.lastError,
+    required this.created,
+    required this.updated,
+  });
+
+  /// 后端只允许 failed / dead / cancelled 的任务重试。
+  bool get retryable => state == 'failed' || state == 'dead' || state == 'cancelled';
+
+  /// 后端允许取消 queued 与 running 的任务。
+  bool get cancellable => state == 'queued' || state == 'running';
+
+  bool get terminal => state == 'done' || state == 'failed' || state == 'dead' || state == 'cancelled';
+
+  factory WorkflowJob.fromJson(Map<String, dynamic> json) => WorkflowJob(
+        id: _s(json['id']),
+        kind: _s(json['kind']),
+        key: _s(json['key']),
+        state: _s(json['state'], 'queued'),
+        attempts: _i(json['attempts']),
+        maxAttempts: _i(json['max_attempts'], 3),
+        priority: _i(json['priority']),
+        runAt: _d(json['run_at']),
+        leaseUntil: _d(json['lease_until']),
+        lastError: _s(json['last_error']),
+        created: _i(json['created']),
+        updated: _i(json['updated']),
+      );
+}
+
+/// 工作流统计（运行/任务队列/MCP）。
+class WorkflowStats {
+  final int runsTotal;
+  final int runsQueued;
+  final int runsRunning;
+  final int runsWaitingHuman;
+  final int runsCompleted;
+  final int runsFailed;
+  final int jobsQueued;
+  final int jobsRunning;
+  final int jobsDone;
+  final int jobsFailed;
+  final int jobsDead;
+  final int jobsCancelled;
+  final double oldestQueuedSeconds;
+  final int mcpTools;
+  final int mcpTokens;
+
+  const WorkflowStats({
+    required this.runsTotal,
+    required this.runsQueued,
+    required this.runsRunning,
+    required this.runsWaitingHuman,
+    required this.runsCompleted,
+    required this.runsFailed,
+    required this.jobsQueued,
+    required this.jobsRunning,
+    required this.jobsDone,
+    required this.jobsFailed,
+    required this.jobsDead,
+    required this.jobsCancelled,
+    required this.oldestQueuedSeconds,
+    required this.mcpTools,
+    required this.mcpTokens,
+  });
+
+  factory WorkflowStats.fromJson(Map<String, dynamic> json) {
+    final runs = _m(json['runs']);
+    final jobs = _m(json['jobs']);
+    final mcp = _m(json['mcp']);
+    return WorkflowStats(
+      runsTotal: _i(runs['total']),
+      runsQueued: _i(runs['queued']),
+      runsRunning: _i(runs['running']),
+      runsWaitingHuman: _i(runs['waiting_human']),
+      runsCompleted: _i(runs['completed']),
+      runsFailed: _i(runs['failed']),
+      jobsQueued: _i(jobs['queued']),
+      jobsRunning: _i(jobs['running']),
+      jobsDone: _i(jobs['done']),
+      jobsFailed: _i(jobs['failed']),
+      jobsDead: _i(jobs['dead']),
+      jobsCancelled: _i(jobs['cancelled']),
+      oldestQueuedSeconds: _d(jobs['oldest_queued_seconds']),
+      mcpTools: _i(mcp['tools']),
+      mcpTokens: _i(mcp['tokens']),
+    );
+  }
+}
+
+class McpToken {
+  final String id;
+  final String username;
+  final String label;
+  final int created;
+  final int expires;
+  final int lastUsed;
+  final bool revoked;
+
+  const McpToken({
+    required this.id,
+    required this.username,
+    required this.label,
+    required this.created,
+    required this.expires,
+    required this.lastUsed,
+    required this.revoked,
+  });
+
+  /// `expires <= 0` 表示长期有效；过期判断按当前时间计算。
+  bool get expired {
+    if (expires <= 0) return false;
+    return DateTime.now().millisecondsSinceEpoch / 1000 >= expires;
+  }
+
+  factory McpToken.fromJson(Map<String, dynamic> json) => McpToken(
+        id: _s(json['id']),
+        username: _s(json['username']),
+        label: _s(json['label']),
+        created: _i(json['created']),
+        expires: _i(json['expires']),
+        lastUsed: _i(json['last_used']),
+        revoked: _b(json['revoked']),
+      );
+}
+
+class McpStatus {
+  final String endpoint;
+  final String protocol;
+  final int tools;
+  final int resources;
+  final int prompts;
+  final List<McpToken> tokens;
+
+  const McpStatus({
+    required this.endpoint,
+    required this.protocol,
+    required this.tools,
+    required this.resources,
+    required this.prompts,
+    this.tokens = const [],
+  });
+
+  factory McpStatus.fromJson(Map<String, dynamic> json) => McpStatus(
+        endpoint: _s(json['endpoint'], '/mcp'),
+        protocol: _s(json['protocol']),
+        tools: _i(json['tools']),
+        resources: _i(json['resources']),
+        prompts: _i(json['prompts']),
+        tokens: (json['tokens'] as List? ?? const []).map((e) => McpToken.fromJson(_m(e))).toList(),
+      );
+}
+
+/// 新建 MCP 令牌的响应：明文 token 只在创建时返回一次。
+class IssuedMcpToken {
+  final String id;
+  final String token;
+  final String label;
+  final String username;
+  final int expires;
+
+  const IssuedMcpToken({
+    required this.id,
+    required this.token,
+    required this.label,
+    required this.username,
+    required this.expires,
+  });
+
+  factory IssuedMcpToken.fromJson(Map<String, dynamic> json) => IssuedMcpToken(
+        id: _s(json['id']),
+        token: _s(json['token']),
+        label: _s(json['label']),
+        username: _s(json['username']),
+        expires: _i(json['expires']),
+      );
+}
+
 /// 距离（秒）格式化为「N 分钟 / N 小时 / N 天」。
 String formatSpan(num? seconds) {
   if (seconds == null) return '—';
@@ -469,9 +792,4 @@ String formatSpan(num? seconds) {
   if (h < 24) return rm > 0 ? '$h 小时 $rm 分' : '$h 小时';
   final d = (s / 86400).floor();
   return '$d 天';
-}
-
-int minutesBetween(num? from, num? to) {
-  if (from == null || to == null || from <= 0 || to <= 0) return 0;
-  return math.max(0, ((to - from) / 60).round());
 }

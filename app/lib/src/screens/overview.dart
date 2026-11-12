@@ -437,7 +437,7 @@ class _Hero extends StatelessWidget {
                 const Text('数据与判断', style: TextStyle(fontSize: 9.5, color: Color(0xFFA8C7B7), letterSpacing: .6)),
                 const SizedBox(height: 8),
                 _heroRow('活动数据', '${state.elders.where((e) => e.online).length} / ${state.elders.length} 位在线'),
-                _heroRow('风险规则', 'risk-rules-v1 · 规则优先'),
+                _VersionRows(state: state),
                 _heroRow('对话模式', modeName('${state.agentsInfo['mode'] ?? 'rules'}')),
                 _heroRow('派单方式', state.autoDispatch ? '自动派单（仅 1 级电话核实）' : '管理员逐单确认'),
               ],
@@ -462,19 +462,45 @@ class _Hero extends StatelessWidget {
       ),
     );
   }
+}
 
-  Widget _heroRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 3.5),
-      child: Row(
-        children: [
-          SizedBox(width: 58, child: Text(label, style: const TextStyle(fontSize: 9.5, color: Color(0xFF94B7A5)))),
-          Expanded(
-            child: Text(value, maxLines: 1, overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontSize: 10, color: Colors.white)),
-          ),
-        ],
-      ),
+Widget _heroRow(String label, String value) {
+  return Padding(
+    padding: const EdgeInsets.symmetric(vertical: 3.5),
+    child: Row(
+      children: [
+        SizedBox(width: 58, child: Text(label, style: const TextStyle(fontSize: 9.5, color: Color(0xFF94B7A5)))),
+        Expanded(
+          child: Text(value, maxLines: 1, overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 10, color: Colors.white)),
+        ),
+      ],
+    ),
+  );
+}
+
+/// 规则、模型与数据结构版本来自统一缓存 `AppState.health`（refresh 的重接口轮次刷新）。
+/// 读取失败或尚未返回时如实显示“未知版本”，不再把 risk-rules-v1 当作固定值写死在界面里。
+class _VersionRows extends StatelessWidget {
+  final AppState state;
+  const _VersionRows({required this.state});
+
+  String _value(String key) {
+    final health = state.health;
+    if (health == null) return '读取中…';
+    final value = '${health[key] ?? ''}'.trim();
+    return value.isEmpty ? '未知版本' : value;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _heroRow('规则版本', _value('rule_version')),
+        _heroRow('模型版本', _value('model_version')),
+        _heroRow('数据版本', _value('schema_version')),
+      ],
     );
   }
 }

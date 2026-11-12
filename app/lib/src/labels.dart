@@ -38,7 +38,7 @@ const Map<String, String> kindNames = {
 };
 
 const Map<String, String> roleNames = {
-  'admin': '社区管理人员',
+  'admin': '社区管理员',
   'staff': '社区照护人员',
   'family': '关联家属',
   'elder': '老人本人',
@@ -100,6 +100,21 @@ const Map<String, String> categoryNames = {
   'care': '关怀',
 };
 
+/// 持久化任务队列（jobs 表）状态，与后端 jobs.state 一致。
+const Map<String, String> jobStateNames = {
+  'queued': '排队中',
+  'running': '执行中',
+  'done': '已完成',
+  'failed': '失败',
+  'dead': '死信',
+  'cancelled': '已取消',
+};
+
+/// 持久化任务队列类型；目前后端只会入队解释生成任务。
+const Map<String, String> jobKindNames = {
+  'explanation': '解释生成任务',
+};
+
 String levelName(int level) => levelNames[level] ?? '状态未知';
 String stateName(String state) => stateNames[state] ?? state;
 String skillName(String? skill) => skillNames[skill] ?? (skill ?? '');
@@ -108,6 +123,9 @@ String outcomeName(String outcome) => outcomeNames[outcome] ?? outcome;
 String runStatusName(String status) => runStatusNames[status] ?? status;
 String modeName(String? mode) => modeNames[mode ?? ''] ?? (mode ?? '规则模式');
 String runKindName(String kind) => runKindNames[kind] ?? kind;
+String categoryLabel(String category) => categoryNames[category] ?? category;
+String jobStateLabel(String state) => jobStateNames[state] ?? state;
+String jobKindLabel(String kind) => jobKindNames[kind] ?? kind;
 
 /// 秒级时间戳格式化为「MM-dd HH:mm」，跨年时保留年份。
 String formatStamp(num? stamp, {String empty = '暂无记录'}) {

@@ -1,11 +1,19 @@
 param([string]$PythonExecutable="python", [string]$FlutterExecutable="", [Alias("RebuildFrontend")][switch]$RebuildApp)
 $ErrorActionPreference="Stop"
 Set-Location -LiteralPath $PSScriptRoot
-if (-not (Test-Path -LiteralPath ".venv\Scripts\python.exe")) {
-    & $PythonExecutable -m venv .venv
-    if ($LASTEXITCODE -ne 0) { throw "Python 3.12+ with venv/pip is required." }
+$venvPython = ".venv\Scripts\python.exe"
+$healthy = $false
+if (Test-Path -LiteralPath $venvPython) {
+    & $venvPython -m pip --version *> $null
+    $healthy = ($LASTEXITCODE -eq 0)
 }
-& .\.venv\Scripts\python.exe -m pip install -r requirements.lock.txt
+if (-not $healthy) {
+    # A half-created or broken virtual environment must be rebuilt, not reused.
+    & $PythonExecutable -m venv .venv --clear
+    if ($LASTEXITCODE -ne 0) { throw "Python 3.12+ with venv/pip is required." }
+    if (-not (Test-Path -LiteralPath $venvPython)) { throw "Virtual environment was not created at .venv." }
+}
+& $venvPython -m pip install -r requirements.lock.txt
 if ($LASTEXITCODE -ne 0) { throw "Python dependency installation failed." }
 if ($RebuildApp) {
     if (-not $FlutterExecutable) {

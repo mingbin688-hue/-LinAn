@@ -104,6 +104,10 @@ try {
         }
         Invoke-VerificationStep 'flutter-analyze' $flutter @('analyze','--no-pub') $appDirectory
         Invoke-VerificationStep 'flutter-test' $flutter @('test','--no-pub') $appDirectory
+        $client = Get-Process -Name 'linan_app' -ErrorAction SilentlyContinue
+        if ($client) {
+            throw 'The Windows client (linan_app.exe) is running and locks the Release build. Close it and rerun Verify.ps1.'
+        }
         Invoke-VerificationStep 'flutter-build-windows' $flutter @('build','windows','--release','--no-pub') $appDirectory
     }
     if ($Package) { Invoke-VerificationStep 'package' $pythonPath @((Join-Path $PSScriptRoot 'scripts\package.py')) }

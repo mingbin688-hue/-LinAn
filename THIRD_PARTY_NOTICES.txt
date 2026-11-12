@@ -1,4 +1,54 @@
-Third-party frontend dependency notices (including build dependencies). CASAS attribution is in README.md.
+Third-party notices for bundled dependencies (backend Python runtime and Flutter client with its build dependencies). CASAS attribution is in README.md.
+
+# 后端运行时依赖（Python）
+
+以下依赖以二进制或源码形式随本项目安装使用，各自遵循其上游许可证。完整许可证文本随对应 Python 包分发（`pip show -f <包名>` 可定位），或见各项目主页。
+
+--- fastapi 0.162.2 ---
+License: MIT
+Project: https://github.com/fastapi/fastapi
+
+--- uvicorn 0.54.0 ---
+License: BSD-3-Clause
+Project: https://uvicorn.dev/
+
+--- numpy 2.5.4 ---
+License: BSD-3-Clause AND 0BSD AND MIT AND Zlib AND CC0-1.0
+Project: https://numpy.org
+
+--- scipy 1.18.1 ---
+License: Copyright (c) 2001-2002 Enthought, Inc. 2003, SciPy Developers. All rights reserved. Redistribution and use in source an
+Project: https://scipy.org/
+
+--- scikit-learn 1.9.1 ---
+License: BSD-3-Clause
+Project: https://scikit-learn.org
+
+--- httpx 0.28.1 ---
+License: BSD-3-Clause
+Project: https://github.com/encode/httpx
+
+--- requests 2.34.2 ---
+License: Apache-2.0
+Project: https://github.com/psf/requests
+
+--- joblib 1.6.0 ---
+License: BSD-3-Clause
+Project: https://joblib.readthedocs.io
+
+--- pydantic 2.14.3 ---
+License: MIT
+Project: https://github.com/pydantic/pydantic
+
+--- starlette 1.10.0 ---
+License: BSD-3-Clause
+Project: https://github.com/Kludex/starlette
+
+--- anyio 4.16.0 ---
+License: MIT
+Project: https://github.com/agronholm/anyio
+
+# 前端依赖（Flutter 客户端及其构建依赖）
 
 --- @babel/helper-string-parser 7.29.13 ---
 MIT License

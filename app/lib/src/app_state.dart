@@ -42,7 +42,10 @@ const List<NavDef> careNav = [
 ];
 
 class AppState extends ChangeNotifier {
-  final ApiClient api = ApiClient();
+  AppState();
+
+  /// 全局唯一的 API 客户端；401 时通过回调清会话，UI 自动回到登录页。
+  late final ApiClient api = ApiClient(onUnauthorized: _handleUnauthorized);
 
   User? user;
   bool booting = true;
@@ -58,7 +61,13 @@ class AppState extends ChangeNotifier {
   List<Staff> staff = [];
   List<Notice> notices = [];
   List<WorkflowRun> runs = [];
+  List<WorkflowJob> jobs = [];
+  WorkflowStats? workflowStats;
+  McpStatus? mcpStatus;
+  bool workflowsLoading = false;
   Map<String, dynamic> agentsInfo = {};
+  /// 后端健康信息（规则/模型/数据结构版本），由 refresh 的重接口轮次更新。
+  Map<String, dynamic>? health;
   Map<String, dynamic>? experiment;
   bool autoDispatch = false;
   List<Recommendation> recs = [];
@@ -68,6 +77,10 @@ class AppState extends ChangeNotifier {
   Timer? _timer;
   bool _refreshing = false;
   bool _disposed = false;
+
+  /// 轮询轮次：人员与工作流等重接口每 3 轮（15 秒）刷新一次。
+  int _pollTick = 0;
+  static const int _heavyEveryTicks = 3;
 
   List<NavDef> get navs {
     final role = user?.role;
@@ -97,6 +110,18 @@ class AppState extends ChangeNotifier {
       if (s.id == id) return s;
     }
     return null;
+  }
+
+  /// 当前查看的老人档案：优先按用户绑定的 elderId 匹配，其次取列表第一条。
+  ///
+  /// 家属/老人端只下发关联档案，因此匹配失败时仍回退第一条；列表为空返回 null。
+  Elder? elderFor(User? user) {
+    final id = user?.elderId;
+    if (id != null) {
+      final matched = elderById(id);
+      if (matched != null) return matched;
+    }
+    return elders.isEmpty ? null : elders.first;
   }
 
   List<Incident> get openIncidents => incidents.where((i) => i.open).toList();
@@ -156,11 +181,18 @@ class AppState extends ChangeNotifier {
     _notify();
     try {
       final data = await api.login(username.trim(), password);
-      api.token = data['token'] as String?;
-      user = User.fromJson(Map<String, dynamic>.from(data['user'] as Map));
+      // 响应格式异常时抛 ApiException，避免裸 as 转换抛出 TypeError。
+      final rawToken = data['token'];
+      final rawUser = data['user'];
+      if (rawToken is! String || rawToken.isEmpty || rawUser is! Map) {
+        throw const ApiException(0, '登录响应格式异常，请确认后端服务版本');
+      }
+      api.token = rawToken;
+      user = User.fromJson(Map<String, dynamic>.from(rawUser));
+      bootError = null;
       page = _defaultPage(user!);
       final prefs = await SharedPreferences.getInstance();
-      if (api.token != null) await prefs.setString('linan.token', api.token!);
+      await prefs.setString('linan.token', rawToken);
       await refresh();
     } on ApiException catch (e) {
       if (e.status == 401 || e.status == 403) await _clearSession();
@@ -170,8 +202,6 @@ class AppState extends ChangeNotifier {
       _notify();
     }
   }
-
-  Future<void> quickLogin(String username) => login(username, demoPassword);
 
   Future<void> logout() async {
     await api.logout();
@@ -188,12 +218,24 @@ class AppState extends ChangeNotifier {
     staff = [];
     notices = [];
     runs = [];
+    jobs = [];
+    workflowStats = null;
+    mcpStatus = null;
     recs = [];
     unassigned = [];
     experiment = null;
+    agentsInfo = {};
+    health = null;
     page = 'overview';
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('linan.token');
+  }
+
+  /// [ApiClient] 收到 401 时的统一回调：清空会话，界面随之回到登录页。
+  void _handleUnauthorized() {
+    if (user == null && api.token == null) return;
+    unawaited(_clearSession());
+    _notify();
   }
 
   Future<void> setBase(String value) async {
@@ -213,12 +255,16 @@ class AppState extends ChangeNotifier {
     if (key == 'lab' && experiment == null) {
       loadExperiment();
     }
-    if (key == 'workflows' && runs.isEmpty) {
-      loadRuns();
+    if (key == 'workflows' && user?.isAdmin == true) {
+      loadWorkflows();
     }
   }
 
-  Future<void> refresh({bool quiet = false}) async {
+  /// 拉取页面数据。
+  ///
+  /// [force] 为 false 时按轮询降载策略执行：老人、事件、通知与任务每轮（5 秒）刷新，
+  /// 人员、自动派单开关这类重接口每 3 轮（15 秒）刷新，运行记录只在工作流页拉取。
+  Future<void> refresh({bool quiet = false, bool force = true}) async {
     if (user == null || _refreshing) return;
     _refreshing = true;
     if (!quiet) {
@@ -231,16 +277,26 @@ class AppState extends ChangeNotifier {
         api.elders().then((v) => elders = v),
         api.incidents().then((v) => incidents = v),
         api.notifications().then((v) => notices = v),
+        api.agents().then((v) => agentsInfo = v),
       ];
       if (!u.isCareSide) {
         futures.add(api.tasks().then((v) => tasks = v));
-        futures.add(api.staff().then((v) => staff = v));
       }
-      if (u.isAdmin) {
-        futures.add(api.workflowRuns().then((v) => runs = v));
-        futures.add(api.workflowSettings().then((v) => autoDispatch = v['auto_dispatch'] == true));
+      // 重接口：人员、自动派单开关与运行记录每 3 轮（15 秒）刷新一次。
+      final heavy = force || _pollTick % _heavyEveryTicks == 0;
+      if (heavy) {
+        futures.add(api.health().then((v) => health = v));
+        if (!u.isCareSide) {
+          futures.add(api.staff().then((v) => staff = v));
+        }
+        if (u.isAdmin) {
+          futures.add(api.workflowSettings().then((v) => autoDispatch = v['auto_dispatch'] == true));
+        }
+        // 运行记录只在管理工作流页可见时轮询；进入该页已由 loadWorkflows 拉取，避免并发重复请求。
+        if (u.isAdmin && !workflowsLoading && page == 'workflows') {
+          futures.add(api.workflowRuns().then((v) => runs = v));
+        }
       }
-      futures.add(api.agents().then((v) => agentsInfo = v));
       await Future.wait(futures);
       lastUpdated = DateTime.now();
     } on ApiException catch (e) {
@@ -260,8 +316,9 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> _poll() async {
-    if (user == null || booting || busy || loading) return;
-    await refresh(quiet: true);
+    if (user == null || booting || busy || loading || workflowsLoading || _refreshing) return;
+    _pollTick++;
+    await refresh(quiet: true, force: false);
   }
 
   Future<void> loadExperiment() async {
@@ -281,6 +338,120 @@ class AppState extends ChangeNotifier {
     } on ApiException catch (e) {
       _toast(e.message);
     }
+  }
+
+  /// 进入工作流页时并行加载运行记录、持久化任务、统计与 MCP 状态（仅管理员）。
+  Future<void> loadWorkflows() async {
+    if (user?.isAdmin != true) return;
+    workflowsLoading = true;
+    _notify();
+    final errors = <String>[];
+    var expired = false;
+    Future<void> track(Future<void> Function() task) async {
+      if (expired) return;
+      try {
+        await task();
+      } on ApiException catch (e) {
+        if (e.status == 401) {
+          expired = true;
+          await _clearSession();
+        } else {
+          errors.add(e.message);
+        }
+      }
+    }
+
+    await Future.wait([
+      track(() async => runs = await api.workflowRuns()),
+      track(() async => jobs = await api.workflowJobs()),
+      track(() async => workflowStats = await api.workflowStats()),
+      track(() async => mcpStatus = await api.mcpStatus()),
+      track(() async => autoDispatch = (await api.workflowSettings())['auto_dispatch'] == true),
+    ]);
+    workflowsLoading = false;
+    _notify();
+    if (expired) {
+      _toast('会话已过期，请重新登录');
+    } else if (errors.isNotEmpty) {
+      _toast(errors.length == 1 ? errors.first : '${errors.first}（另有 ${errors.length - 1} 项加载失败）');
+    }
+  }
+
+  Future<void> loadJobs() async {
+    try {
+      jobs = await api.workflowJobs();
+      workflowStats = await api.workflowStats();
+      _notify();
+    } on ApiException catch (e) {
+      _toast(e.message);
+    }
+  }
+
+  Future<void> loadMcp() async {
+    try {
+      mcpStatus = await api.mcpStatus();
+      _notify();
+    } on ApiException catch (e) {
+      _toast(e.message);
+    }
+  }
+
+  Future<void> retryJob(String id) async {
+    try {
+      await api.retryJob(id);
+    } on Object catch (e) {
+      _toast('$e');
+      rethrow;
+    }
+    await loadJobs();
+    _toast('任务已重新排队');
+  }
+
+  Future<void> cancelJob(String id) async {
+    try {
+      await api.cancelJob(id);
+    } on Object catch (e) {
+      _toast('$e');
+      rethrow;
+    }
+    await loadJobs();
+    _toast('任务已取消');
+  }
+
+  Future<void> retryRun(String id) async {
+    try {
+      await api.retryRun(id);
+    } on Object catch (e) {
+      _toast('$e');
+      rethrow;
+    }
+    await loadRuns();
+    await loadJobs();
+    _toast('运行已重新排队');
+  }
+
+  Future<IssuedMcpToken> createMcpToken({required String label, required int expiresHours}) async {
+    late final IssuedMcpToken issued;
+    try {
+      issued = await api.createMcpToken(label: label, expiresHours: expiresHours);
+    } on Object catch (e) {
+      _toast('$e');
+      rethrow;
+    }
+    await loadMcp();
+    _toast('已创建 MCP 令牌，明文仅显示一次');
+    return issued;
+  }
+
+  Future<void> revokeMcpToken(String id) async {
+    try {
+      await api.revokeMcpToken(id);
+    } on Object catch (e) {
+      _toast('$e');
+      rethrow;
+    }
+    await loadMcp();
+    _toast('令牌已撤销');
   }
 
   Future<void> loadRecommendations() async {
@@ -354,10 +525,33 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  Future<void> updateStaff(int id, Map<String, dynamic> body) async {
+  /// 更新人员值班/接单/楼栋。
+  ///
+  /// 后端 `WorkerUpdate` 三个字段必填，未传入的字段先用已加载的 staff 列表补全；
+  /// 失败只 toast 一次并返回 false，不向调用方抛异常。
+  Future<bool> updateStaff(int staffId, {bool? onDuty, bool? available, int? location}) async {
+    final current = staffById(staffId);
+    final duty = onDuty ?? current?.onDuty;
+    final accept = available ?? current?.available;
+    final loc = location ?? current?.location;
+    if (duty == null || accept == null || loc == null) {
+      _toast('人员状态尚未加载，暂时无法修改');
+      return false;
+    }
+    if (loc < 1 || loc > 5) {
+      _toast('负责楼栋需在 1–5 号楼之间');
+      return false;
+    }
     try {
-      await api.updateStaff(id, body);
+      await api.updateStaff(staffId, {'on_duty': duty, 'available': accept, 'location': loc});
       await refresh();
+      return true;
+    } on ApiException catch (e) {
+      _toast(e.message);
+      return false;
+    } catch (_) {
+      _toast('人员状态更新失败，请稍后重试');
+      return false;
     } finally {
       _notify();
     }

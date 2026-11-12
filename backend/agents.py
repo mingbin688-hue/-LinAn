@@ -8,9 +8,11 @@ import httpx
 from fastapi import HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 from .db import dumps, audit
+from .context_pack import ContextBuilder
 from .engine import LEVELS, TASK_LABELS, SKILLS
+from .scope import ref, visible_ids
 from .workflow_store import node
-from .scheduler import assign
+from .workflow_defs import version as definition_version
 
 CATALOG = [
     {'id':'context','name':'上下文整理 Agent','description':'整理数据来源、当前状态与信息缺失'},
@@ -23,18 +25,6 @@ CATALOG = [
 def result(summary, evidence=None, actions=None, mode='rules', fallback_reason=None):
     return dict(summary=summary, evidence=evidence or [], actions=actions or [], mode=mode,
                 fallback_reason=fallback_reason)
-
-
-def ref(kind, ident, label, **kwargs):
-    return dict(type=kind, id=str(ident), label=label, **kwargs)
-
-
-def visible_ids(c, user):
-    if user['role']=='admin':
-        return {r[0] for r in c.execute('SELECT id FROM elders')}
-    if user['role'] in ('family','elder'):
-        return {user['elder_id']}
-    return {r[0] for r in c.execute("SELECT DISTINCT elder_id FROM tasks WHERE staff_id=? AND state!='closed'", (user['staff_id'],))}
 
 
 def specialist(snapshot, kind):
@@ -149,58 +139,10 @@ class ModelProvider:
 class Assistant:
     def __init__(self, db, engine, provider):
         self.db, self.engine, self.provider = db, engine, provider
+        self.context = ContextBuilder(engine)
 
     def records(self, c, user, query='', elder_id=None, task_id=None):
-        allowed = visible_ids(c,user)
-        target = set(allowed)
-        if elder_id is not None:
-            if elder_id not in allowed:
-                raise HTTPException(403,'无权查询该老人')
-            target = {elder_id}
-        if task_id:
-            t = c.execute('SELECT * FROM tasks WHERE id=?',(task_id,)).fetchone()
-            if not t or t['elder_id'] not in allowed or (user['role']=='staff' and t['staff_id']!=user['staff_id']):
-                raise HTTPException(403,'无权查询该任务')
-            if elder_id is not None and t['elder_id']!=elder_id:
-                raise HTTPException(422,'老人和任务不匹配')
-            target = {t['elder_id']}
-        all_elders = [dict(r) for r in c.execute('SELECT * FROM elders ORDER BY id') if r['id'] in target]
-        named = [e for e in all_elders if e['name'] in query]
-        if named:
-            all_elders = named
-            target = {e['id'] for e in named}
-        elders, refs = [], []
-        for e in all_elders:
-            p,s = json.loads(e['profile']),json.loads(e['state'])
-            elders.append(dict(id=e['id'],name=e['name'],source=s.get('source'),origin=p.get('origin'),
-                               online=s.get('online'),last_seen=s.get('last_seen'),last_checkin=s.get('last_checkin'),
-                               evidence=s.get('evidence',[]),history_days=p.get('history_days',0)))
-            refs.append(ref('elder',e['id'],e['name']+'的状态',elder_id=e['id']))
-        incidents = []
-        for r in c.execute("SELECT * FROM incidents WHERE status='open' ORDER BY level DESC,created DESC"):
-            if r['elder_id'] in target:
-                i = {k:r[k] for k in ('id','elder_id','level','title','advice')}
-                i['evidence'] = json.loads(r['evidence'])
-                incidents.append(i)
-                refs.append(ref('incident',r['id'],r['title'],elder_id=r['elder_id']))
-        tasks = []
-        for t in c.execute("SELECT * FROM tasks WHERE state!='closed' ORDER BY level DESC,created"):
-            if t['elder_id'] not in target or (user['role']=='staff' and t['staff_id']!=user['staff_id']) or (task_id and t['id']!=task_id):
-                continue
-            item = {k:t[k] for k in ('id','elder_id','state','level','required_skill')}
-            if user['role'] in ('admin','staff'):
-                worker = c.execute('SELECT name FROM staff WHERE id=?',(t['staff_id'],)).fetchone()
-                item['staff_name'] = worker['name'] if worker else '待派单'
-            tasks.append(item)
-            refs.append(ref('task',t['id'],'处置任务 '+t['id'],elder_id=t['elder_id'],task_id=t['id']))
-        recommendations = []
-        if user['role']=='admin':
-            pending = [dict(r) for r in c.execute("SELECT * FROM tasks WHERE state='pending'")]
-            workers = self.engine.worker_list(c)
-            names = {w['id']:w['name'] for w in workers}
-            recommendations = [{**m,'staff_name':names[m['staff_id']]} for m in assign(pending,workers)
-                               if any(t['id']==m['task_id'] for t in tasks)]
-        return dict(elders=elders,incidents=incidents,tasks=tasks,recommendations=recommendations), refs
+        return self.context.records(c, user, query, elder_id, task_id)
 
     def session(self, c, user, sid):
         s = c.execute('SELECT * FROM assistant_sessions WHERE id=?',(sid,)).fetchone()
@@ -266,26 +208,30 @@ class Assistant:
             if session_id:
                 previous = self.session(c,user,session_id)
                 history = [{'role':m['role'],'content':m['content']} for m in previous['messages'][-8:]]
-            data, refs = self.records(c,user,message,elder_id,task_id)
+            pack = self.context.build(c,user,message,elder_id,task_id,history=history)
             # A follow-up inherits a single selected resident, never a larger historical scope.
-            if session_id and elder_id is None and task_id is None and not any(e['name'] in message for e in data['elders']):
+            if session_id and elder_id is None and task_id is None and not any(e['name'] in message for e in pack['records']['elders']):
                 s = c.execute('SELECT scope_ids FROM assistant_sessions WHERE id=?',(session_id,)).fetchone()
                 old_ids = json.loads(s['scope_ids'])
                 if len(old_ids)==1:
-                    data,refs = self.records(c,user,message,old_ids[0])
+                    pack = self.context.build(c,user,message,old_ids[0],None,history=history)
+            data, refs = pack['records'], pack['citations']
         used_ids.update(e['id'] for e in data['elders'])
         used_tasks.update(t['id'] for t in data['tasks'])
         base = self.rule_answer(message,data,refs)
         tool_log = []
         def tool(query='',elder_id=None,task_id=None):
             with self.db.transaction() as c:
-                found, citations = self.records(c,user,query,elder_id,task_id)
-            used_ids.update(e['id'] for e in found['elders'])
-            used_tasks.update(t['id'] for t in found['tasks'])
-            tool_log.append({'query':query,'elder_id':elder_id,'task_id':task_id,'records':len(citations)})
-            return found,citations
+                found = self.context.build(c,user,query,elder_id,task_id)
+            used_ids.update(e['id'] for e in found['records']['elders'])
+            used_tasks.update(t['id'] for t in found['records']['tasks'])
+            tool_log.append({'query':query,'elder_id':elder_id,'task_id':task_id,
+                             'records':len(found['citations']),'chars':found['summary']['chars']})
+            return found['records'],found['citations']
         started = time.perf_counter()
-        answer = self.provider.generate(base,{'records':data,'conversation':history},tool=tool,question=message)
+        answer = self.provider.generate(base,{'records':data,'conversation':pack['conversation'],'context':pack['model_context']},tool=tool,question=message)
+        context_summary = dict(pack['summary'])
+        context_summary['tools'] = tool_log
         with self.db.transaction(True) as c:
             if not used_ids.issubset(visible_ids(c,user)):
                 raise HTTPException(403,'关联服务范围已变化，请重新查询')
@@ -301,9 +247,14 @@ class Assistant:
                 c.execute('INSERT INTO assistant_sessions(id,owner,scope_ids,created,scope_tasks) VALUES(?,?,?,?,?)',(session_id,user['username'],dumps(sorted(used_ids)),time.time(),dumps(sorted(used_tasks))))
             run_id = 'WF-'+secrets.token_hex(6)
             now = time.time()
-            c.execute("INSERT INTO workflow_runs VALUES(?,?,?,NULL,NULL,?,'completed',?,?,?, ?,?)",
-                      (run_id,'chat','chat:'+secrets.token_hex(12),user['username'],answer['mode'],answer['summary'],dumps({'scope_ids':sorted(used_ids)}),now,now))
-            node(c,run_id,'scope','身份与范围校验','context','completed',{'role':user['role']},result(f'授权对象 {len(used_ids)} 位'))
+            c.execute("""INSERT INTO workflow_runs(id,kind,trigger_key,elder_id,task_id,owner,status,mode,
+                summary,snapshot,definition_version,context_digest,created,updated)
+                VALUES(?,?,?,NULL,NULL,?,'completed',?,?,?,?,?,?,?)""",
+                      (run_id,'chat','chat:'+secrets.token_hex(12),user['username'],answer['mode'],answer['summary'],
+                       dumps({'scope_ids':sorted(used_ids)}),definition_version('chat'),
+                       pack['summary']['fingerprint'],now,now))
+            node(c,run_id,'scope','身份与范围校验','context','completed',
+                 {'role':user['role'],'digest':pack['summary']['fingerprint']},result(f'授权对象 {len(used_ids)} 位'))
             node(c,run_id,'query','授权业务查询','context','completed',{'query':message,'tools':tool_log},base)
             node(c,run_id,'answer','生成回答','risk','completed',{'session_id':session_id},answer,answer['mode'],answer['fallback_reason'],(time.perf_counter()-started)*1000)
             for role,content,citations in [('user',message,[]),('assistant',answer['summary'],answer['evidence'])]:
@@ -311,4 +262,4 @@ class Assistant:
                           (session_id,role,content,dumps(citations),answer['mode'],dumps(sorted(used_ids)),now))
             audit(c,user['username'],'assistant_queried',run_id,{'session_id':session_id,'mode':answer['mode']})
         return dict(reply=answer['summary'],citations=answer['evidence'],mode=answer['mode'],run_id=run_id,
-                    session_id=session_id,fallback_reason=answer['fallback_reason'])
+                    session_id=session_id,fallback_reason=answer['fallback_reason'],context=context_summary)

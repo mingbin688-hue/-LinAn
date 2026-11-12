@@ -319,7 +319,23 @@ class _ElderDetailState extends State<_ElderDetail> {
           );
         }
         if (snapshot.hasError) {
-          return EmptyHint('加载详情失败：${snapshot.error}', icon: Icons.error_outline);
+          // 详情可能已被删除（404），单独给出可恢复的提示，而不是只抛原始错误串。
+          final err = snapshot.error;
+          final missing = err is ApiException && err.status == 404;
+          return Column(
+            children: [
+              EmptyHint(
+                missing ? '该老人档案不存在或已被移除，请返回后刷新列表。' : '加载详情失败：$err',
+                icon: Icons.error_outline,
+              ),
+              const SizedBox(height: 10),
+              OutlinedButton.icon(
+                onPressed: () => setState(() => _future = widget.state.elderDetail(widget.elder.id)),
+                icon: const Icon(Icons.refresh, size: 14),
+                label: const Text('重新加载'),
+              ),
+            ],
+          );
         }
         final e = snapshot.data!;
         return Column(

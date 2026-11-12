@@ -124,7 +124,7 @@ class _IncidentsPageState extends State<IncidentsPage> {
     showSideSheet(
       context,
       title: '${incident.elderName} · ${incident.title}',
-      subtitle: '事件 #${incident.id} · ${categoryName(incident.category)} · ${incident.open ? '未关闭' : '已关闭'}',
+      subtitle: '事件 #${incident.id} · ${categoryLabel(incident.category)} · ${incident.open ? '未关闭' : '已关闭'}',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -196,8 +196,6 @@ class _IncidentsPageState extends State<IncidentsPage> {
   }
 }
 
-String categoryName(String category) => categoryNames[category] ?? category;
-
 CareTask? _taskFor(AppState s, String incidentId) {
   for (final t in s.tasks) {
     if (t.incidentId == incidentId) return t;
@@ -241,7 +239,7 @@ class _IncidentRow extends StatelessWidget {
                         Text(incident.elderName,
                             style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: LinanColors.text)),
                         const SizedBox(height: 2),
-                        Text('${categoryName(incident.category)} · #${incident.id}',
+                        Text('${categoryLabel(incident.category)} · #${incident.id}',
                             style: const TextStyle(fontSize: 9.5, color: LinanColors.faint)),
                       ],
                     ),
